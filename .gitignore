@@ -1,0 +1,17 @@
+# Godot 4 ignores
+.godot/
+.import/
+*.translation
+
+# Exported builds
+build/
+export.cfg
+export_presets.cfg
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Agent stuff
+.mcp*

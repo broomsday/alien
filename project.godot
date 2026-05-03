@@ -1,0 +1,48 @@
+; Engine configuration file.
+; Edit by hand — keep declarative and minimal.
+
+config_version=5
+
+[application]
+
+config/name="Alien"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[input]
+
+mode_excavate={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":49)]
+}
+mode_build_wall={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":50)]
+}
+mode_build_furnace={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":51)]
+}
+attack={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":32)]
+}
+cancel_action={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":67)]
+}
+start_expedition={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":69)]
+}
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
