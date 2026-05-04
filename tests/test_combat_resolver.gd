@@ -25,7 +25,7 @@ func _test_resolve_attack_when_enemy_deals_lethal_damage_kills_player_and_drops_
 	var starting_fuel: int = state.inventory.get_count(ItemIdScript.Id.FUEL)
 	var starting_food: int = state.inventory.get_count(ItemIdScript.Id.CANNED_FOOD)
 
-	state.player.health.take_damage(93)
+	state.player.integrity.take_damage(93)
 	var enemy = EnemyDefinitionScript.new(
 		EnemyKindScript.Kind.RAZOR_MAW, "Test Hunter", 9, 7, 7, 100)
 	state.begin_combat(
@@ -108,7 +108,7 @@ func _test_resolve_attack_when_combat_starts_from_expedition_holds_rewards_until
 		"expected fuel unchanged mid-fight")
 	assert(state.inventory.get_count(ItemIdScript.Id.CANNED_FOOD) == starting_food,
 		"expected food unchanged mid-fight")
-	assert(not first.enemy_defeated(), "first swing on 8-HP beast shouldn't defeat it")
+	assert(not first.enemy_defeated(), "first swing on health-8 beast shouldn't defeat it")
 
 	var final_outcome = first
 	while state.active_combat != null:

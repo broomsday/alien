@@ -24,11 +24,11 @@ func _test_create_new_creates_expected_starting_state() -> void:
 		"expected 3 fuel, got %d" % state.inventory.get_count(ItemIdScript.Id.FUEL))
 	assert(state.inventory.get_count(ItemIdScript.Id.CANNED_FOOD) == 4,
 		"expected 4 food, got %d" % state.inventory.get_count(ItemIdScript.Id.CANNED_FOOD))
-	assert(state.player.max_hit_points() == 100, "expected 100 max HP")
-	assert(state.player.current_hit_points() == 100, "expected 100 current HP")
+	assert(state.player.max_integrity() == 100, "expected 100 max integrity")
+	assert(state.player.current_integrity() == 100, "expected 100 current integrity")
+	assert(absf(state.player.current_energy - 100.0) < 0.001, "expected 100 energy")
 	assert(absf(state.player.current_temperature - 72.0) < 0.001,
 		"expected 72 temp, got %f" % state.player.current_temperature)
-	assert(absf(state.player.current_hygiene - 100.0) < 0.001, "expected 100 hygiene")
 	assert(absf(state.player.current_psyche - 100.0) < 0.001, "expected 100 psyche")
 	assert(state.active_action == null, "expected no active action")
 

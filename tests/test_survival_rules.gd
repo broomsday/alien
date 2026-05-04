@@ -17,13 +17,12 @@ const StartActionCommandScript = preload("res://scripts/core/simulation/start_ac
 const GameActionKindScript = preload("res://scripts/core/simulation/game_action_kind.gd")
 
 func _init() -> void:
-	_test_decreases_nutrition_over_time()
-	_test_decreases_hygiene_over_time()
-	_test_consume_food_restores_nutrition_and_consumes_inventory()
-	_test_critical_nutrition_damages_health()
-	_test_low_temperature_damages_health()
+	_test_decreases_energy_over_time()
+	_test_consume_food_restores_energy_and_consumes_inventory()
+	_test_critical_energy_depletion_damages_integrity()
+	_test_low_temperature_damages_integrity()
 	_test_comfortable_state_recovers_psyche()
-	_test_cold_hungry_dirty_state_drops_psyche()
+	_test_cold_low_energy_state_drops_psyche()
 	_test_underground_at_night_stays_warmer_than_surface()
 	_test_winter_surface_harsher_than_summer()
 	_test_active_furnace_raises_nearby_ambient_temperature()
@@ -34,62 +33,54 @@ func _init() -> void:
 	print("test_survival_rules: ok")
 	quit(0)
 
-func _test_decreases_nutrition_over_time() -> void:
+func _test_decreases_energy_over_time() -> void:
 	var state: GameState = GameStateFactoryScript.create_new()
 	var step: SimulationStep = SimulationStepScript.new()
-	var starting: float = state.player.current_nutrition
+	var starting: float = state.player.current_energy
 
 	step.advance(state, 10.0, [])
 
-	assert(state.player.current_nutrition < starting,
-		"expected nutrition to drop, got %f" % state.player.current_nutrition)
+	assert(state.player.current_energy < starting,
+		"expected energy to drop, got %f" % state.player.current_energy)
 
-func _test_decreases_hygiene_over_time() -> void:
+func _test_consume_food_restores_energy_and_consumes_inventory() -> void:
 	var state: GameState = GameStateFactoryScript.create_new()
 	var step: SimulationStep = SimulationStepScript.new()
-	var starting: float = state.player.current_hygiene
-
-	step.advance(state, 10.0, [])
-
-	assert(state.player.current_hygiene < starting,
-		"expected hygiene to drop, got %f" % state.player.current_hygiene)
-
-func _test_consume_food_restores_nutrition_and_consumes_inventory() -> void:
-	var state: GameState = GameStateFactoryScript.create_new()
-	var step: SimulationStep = SimulationStepScript.new()
-	state.player.drain_nutrition(50.0)
+	state.player.drain_energy(50.0)
 	var starting_food: int = state.inventory.get_count(ItemIdScript.Id.CANNED_FOOD)
 
 	step.advance(state, 0.0, [ConsumeFoodCommandScript.new()])
 
-	assert(state.player.current_nutrition > 50.0,
-		"expected nutrition restored, got %f" % state.player.current_nutrition)
+	assert(state.player.current_energy > 50.0,
+		"expected energy restored, got %f" % state.player.current_energy)
 	assert(state.inventory.get_count(ItemIdScript.Id.CANNED_FOOD) == starting_food - 1,
 		"expected one canned food consumed, got %d" %
 			state.inventory.get_count(ItemIdScript.Id.CANNED_FOOD))
 
-func _test_critical_nutrition_damages_health() -> void:
+func _test_critical_energy_depletion_damages_integrity() -> void:
 	var state: GameState = GameStateFactoryScript.create_new()
 	var step: SimulationStep = SimulationStepScript.new()
-	state.player.drain_nutrition(100.0)
-	var starting_health: int = state.player.current_hit_points()
+	state.player.drain_energy(100.0)
+	var starting_integrity: int = state.player.current_integrity()
 
 	step.advance(state, 5.0, [])
 
-	assert(state.player.current_hit_points() < starting_health,
-		"expected health to drop from starvation, got %d" % state.player.current_hit_points())
+	assert(state.player.current_integrity() < starting_integrity,
+		"expected integrity to drop from energy depletion, got %d" %
+			state.player.current_integrity())
 
-func _test_low_temperature_damages_health() -> void:
+func _test_low_temperature_damages_integrity() -> void:
 	var state: GameState = GameStateFactoryScript.create_new()
 	state.player.move_temperature_toward(0.0, 500.0, 1.0)
 	assert(state.player.current_temperature == 0.0,
 		"precondition: expected body temperature 0.0, got %f" % state.player.current_temperature)
-	var starting_health: int = state.player.current_hit_points()
+	var starting_integrity: int = state.player.current_integrity()
 
 	_advance_in_steps(state, 5.0, 1.0)
 
-	assert(state.player.current_hit_points() < starting_health,
-		"expected health to drop from hypothermia, got %d" % state.player.current_hit_points())
+	assert(state.player.current_integrity() < starting_integrity,
+		"expected integrity to drop from hypothermia, got %d" %
+			state.player.current_integrity())
 
 func _test_comfortable_state_recovers_psyche() -> void:
 	var state: GameState = GameStateFactoryScript.create_new()
@@ -105,11 +96,10 @@ func _test_comfortable_state_recovers_psyche() -> void:
 	assert(state.player.current_psyche > 88.0,
 		"expected psyche > 88, got %f" % state.player.current_psyche)
 
-func _test_cold_hungry_dirty_state_drops_psyche() -> void:
+func _test_cold_low_energy_state_drops_psyche() -> void:
 	var state: GameState = GameStateFactoryScript.create_new()
 	var step: SimulationStep = SimulationStepScript.new()
-	state.player.drain_nutrition(80.0)
-	state.player.reduce_hygiene(75.0)
+	state.player.drain_energy(80.0)
 	state.player.move_temperature_toward(10.0, 500.0, 1.0)
 	var starting_psyche: float = state.player.current_psyche
 
@@ -160,10 +150,10 @@ func _test_winter_surface_harsher_than_summer() -> void:
 		"expected winter body temp (%f) < summer body temp (%f)" %
 			[winter_state.player.current_temperature,
 				summer_state.player.current_temperature])
-	assert(winter_state.player.current_hit_points() < summer_state.player.current_hit_points(),
-		"expected winter health (%d) < summer health (%d)" %
-			[winter_state.player.current_hit_points(),
-				summer_state.player.current_hit_points()])
+	assert(winter_state.player.current_integrity() < summer_state.player.current_integrity(),
+		"expected winter integrity (%d) < summer integrity (%d)" %
+			[winter_state.player.current_integrity(),
+				summer_state.player.current_integrity()])
 
 func _test_active_furnace_raises_nearby_ambient_temperature() -> void:
 	var unheated_state: GameState = _make_indoor_winter_furnace_state(false)
@@ -194,10 +184,10 @@ func _test_underground_shelter_and_furnace_materially_reduce_winter_exposure_ris
 
 	assert(shelter_state.world.is_indoors(shelter_state.player.tile_position),
 		"expected shelter tile %s to remain indoors" % shelter_state.player.tile_position)
-	assert(shelter_state.player.current_hit_points() > surface_state.player.current_hit_points(),
-		"expected shelter HP (%d) > surface HP (%d)" %
-			[shelter_state.player.current_hit_points(),
-				surface_state.player.current_hit_points()])
+	assert(shelter_state.player.current_integrity() > surface_state.player.current_integrity(),
+		"expected shelter integrity (%d) > surface integrity (%d)" %
+			[shelter_state.player.current_integrity(),
+				surface_state.player.current_integrity()])
 	assert(shelter_state.player.current_temperature > surface_state.player.current_temperature,
 		"expected shelter body temp (%f) > surface body temp (%f)" %
 			[shelter_state.player.current_temperature,
@@ -226,8 +216,8 @@ func _test_excavated_winter_shelter_keeps_player_alive() -> void:
 	assert(state.player.is_alive(), "expected player to survive sheltered winter")
 	assert(state.world.is_indoors(Vector2i(5, 5)),
 		"expected (5,5) pocket to remain indoors after advance")
-	assert(state.player.current_hit_points() == 100,
-		"expected health to remain 100, got %d" % state.player.current_hit_points())
+	assert(state.player.current_integrity() == 100,
+		"expected integrity to remain 100, got %d" % state.player.current_integrity())
 
 func _test_winter_expedition_cools_faster_than_winter_surface_idle() -> void:
 	var idle_world: WorldGrid = WorldGridScript.create_default(12, 10, 4)

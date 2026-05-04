@@ -14,7 +14,8 @@ static func create_new(p_random_seed: int = _DEFAULT_SEED) -> GameState:
 		100.0, 72.0,
 		EquippedWeapon.Slot.NONE,
 		100.0, 100.0,
-		100.0, 100.0)
+		"Accalia.png",
+		5, 5)
 
 	var inventory: InventoryState = InventoryState.new()
 	inventory.add(ItemId.Id.SCRAP_METAL, 8)

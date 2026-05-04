@@ -17,26 +17,25 @@ static func update(state: GameState, delta_seconds: float) -> void:
 
 	state.set_environment_status(ambient_temperature, is_indoors, is_underground, ambient_gas)
 
-	state.player.drain_nutrition(GameBalance.NUTRITION_DECAY_PER_SECOND * delta_seconds)
-	state.player.reduce_hygiene(GameBalance.HYGIENE_DECAY_PER_SECOND * delta_seconds)
+	state.player.drain_energy(GameBalance.ENERGY_DECAY_PER_SECOND * delta_seconds)
 	state.player.move_temperature_toward(
 			ambient_temperature,
 			_get_temperature_adjust_rate(state, is_indoors, is_underground),
 			delta_seconds)
 	_update_psyche(state, delta_seconds)
 
-	if state.player.current_nutrition <= GameBalance.STARVATION_CRITICAL_THRESHOLD:
-		state.player.apply_neglect_damage(GameBalance.STARVATION_DAMAGE_PER_SECOND * delta_seconds)
+	if state.player.current_energy <= GameBalance.ENERGY_DEPLETION_CRITICAL_THRESHOLD:
+		state.player.apply_neglect_damage(GameBalance.ENERGY_DEPLETION_DAMAGE_PER_SECOND * delta_seconds)
 	if state.player.current_temperature <= GameBalance.HYPOTHERMIA_DAMAGE_THRESHOLD:
 		state.player.apply_neglect_damage(GameBalance.HYPOTHERMIA_DAMAGE_PER_SECOND * delta_seconds)
 
 static func try_consume_canned_food(state: GameState) -> bool:
 	assert(state != null, "state required")
-	if state.player.current_nutrition >= state.player.max_nutrition:
+	if state.player.current_energy >= state.player.max_energy:
 		return false
 	if not state.inventory.try_remove(ItemId.Id.CANNED_FOOD, 1):
 		return false
-	state.player.restore_nutrition(GameBalance.CANNED_FOOD_NUTRITION_RESTORE)
+	state.player.restore_energy(GameBalance.CANNED_FOOD_ENERGY_RESTORE)
 	return true
 
 static func get_danger_level(state: GameState) -> int:
@@ -114,12 +113,10 @@ static func _get_temperature_adjust_rate(state: GameState, is_indoors: bool, is_
 
 static func _update_psyche(state: GameState, delta_seconds: float) -> void:
 	var penalty_per_second: float = 0.0
-	if state.player.current_nutrition <= GameBalance.LOW_NUTRITION_PSYCHE_THRESHOLD:
-		penalty_per_second += GameBalance.LOW_NUTRITION_PSYCHE_PENALTY_PER_SECOND
+	if state.player.current_energy <= GameBalance.LOW_ENERGY_PSYCHE_THRESHOLD:
+		penalty_per_second += GameBalance.LOW_ENERGY_PSYCHE_PENALTY_PER_SECOND
 	if state.player.current_temperature <= GameBalance.LOW_TEMPERATURE_PSYCHE_THRESHOLD:
 		penalty_per_second += GameBalance.LOW_TEMPERATURE_PSYCHE_PENALTY_PER_SECOND
-	if state.player.current_hygiene <= GameBalance.LOW_HYGIENE_PSYCHE_THRESHOLD:
-		penalty_per_second += GameBalance.LOW_HYGIENE_PSYCHE_PENALTY_PER_SECOND
 	if penalty_per_second > 0.0:
 		state.player.reduce_psyche(penalty_per_second * delta_seconds)
 		return

@@ -283,7 +283,7 @@ func _test_advance_when_attack_action_records_combat_round() -> void:
 
 	assert(state.active_action == null, "expected ATTACK action cleared after 1.5s")
 	assert(state.last_combat_round_outcome != null, "expected a combat round recorded")
-	assert(state.active_combat != null, "9-HP beast should not die in one round")
+	assert(state.active_combat != null, "health-9 beast should not die in one round")
 
 func _test_advance_when_attack_defeats_enemy_applies_pending_expedition_reward() -> void:
 	var state: GameState = GameStateFactoryScript.create_new(5)

@@ -2,64 +2,67 @@ class_name PlayerState
 extends RefCounted
 
 var tile_position: Vector2i
-var health: PlayerStats
-var max_nutrition: float
-var current_nutrition: float
+var integrity: PlayerStats
+var max_energy: float
+var current_energy: float
 var combat_skill: int
 var max_temperature: float
 var current_temperature: float
-var max_hygiene: float
-var current_hygiene: float
 var max_psyche: float
 var current_psyche: float
 var equipped_weapon: int
+var portrait_filename: String
+var physique: int
+var aptitude: int
 
 var _damage_buffer: float = 0.0
 
 func _init(
 		p_tile_position: Vector2i,
-		p_health: PlayerStats,
-		p_max_nutrition: float,
-		p_current_nutrition: float,
+		p_integrity: PlayerStats,
+		p_max_energy: float,
+		p_current_energy: float,
 		p_combat_skill: int,
 		p_max_temperature: float = 100.0,
 		p_current_temperature: float = 70.0,
 		p_equipped_weapon: int = EquippedWeapon.Slot.NONE,
-		p_max_hygiene: float = 100.0,
-		p_current_hygiene: float = 100.0,
 		p_max_psyche: float = 100.0,
-		p_current_psyche: float = 100.0) -> void:
-	assert(p_health != null, "health required")
-	assert(p_max_nutrition > 0.0, "max_nutrition must be positive")
-	assert(p_current_nutrition >= 0.0 and p_current_nutrition <= p_max_nutrition, "nutrition out of range")
+		p_current_psyche: float = 100.0,
+		p_portrait_filename: String = "Unknown.png",
+		p_physique: int = 0,
+		p_aptitude: int = 0) -> void:
+	assert(p_integrity != null, "integrity required")
+	assert(p_max_energy > 0.0, "max_energy must be positive")
+	assert(p_current_energy >= 0.0 and p_current_energy <= p_max_energy, "energy out of range")
 	assert(p_combat_skill >= 0, "combat_skill must be non-negative")
 	assert(p_max_temperature > 0.0, "max_temperature must be positive")
 	assert(p_current_temperature >= 0.0 and p_current_temperature <= p_max_temperature, "temperature out of range")
-	assert(p_max_hygiene > 0.0, "max_hygiene must be positive")
-	assert(p_current_hygiene >= 0.0 and p_current_hygiene <= p_max_hygiene, "hygiene out of range")
 	assert(p_max_psyche > 0.0, "max_psyche must be positive")
 	assert(p_current_psyche >= 0.0 and p_current_psyche <= p_max_psyche, "psyche out of range")
+	assert(p_physique >= 0, "physique must be non-negative")
+	assert(p_aptitude >= 0, "aptitude must be non-negative")
 	tile_position = p_tile_position
-	health = p_health
-	max_nutrition = p_max_nutrition
-	current_nutrition = p_current_nutrition
+	integrity = p_integrity
+	max_energy = p_max_energy
+	current_energy = p_current_energy
 	combat_skill = p_combat_skill
 	max_temperature = p_max_temperature
 	current_temperature = p_current_temperature
-	max_hygiene = p_max_hygiene
-	current_hygiene = p_current_hygiene
 	max_psyche = p_max_psyche
 	current_psyche = p_current_psyche
 	equipped_weapon = p_equipped_weapon
+	portrait_filename = p_portrait_filename
+	physique = p_physique
+	aptitude = p_aptitude
 
-func max_hit_points() -> int:
-	return health.max_health
+func max_integrity() -> int:
+	return integrity.max_integrity
 
-func current_hit_points() -> int:
-	return health.current_health
+func current_integrity() -> int:
+	return integrity.current_integrity
 
 func is_alive() -> bool:
-	return health.current_health > 0
+	return integrity.current_integrity > 0
 
 func combat_power_bonus() -> int:
 	if equipped_weapon == EquippedWeapon.Slot.SIMPLE_WEAPON:
@@ -76,21 +79,13 @@ func increase_combat_skill(amount: int) -> void:
 	assert(amount >= 0, "amount must be non-negative")
 	combat_skill += amount
 
-func drain_nutrition(amount: float) -> void:
+func drain_energy(amount: float) -> void:
 	assert(amount >= 0.0, "amount must be non-negative")
-	current_nutrition = max(0.0, current_nutrition - amount)
+	current_energy = max(0.0, current_energy - amount)
 
-func restore_nutrition(amount: float) -> void:
+func restore_energy(amount: float) -> void:
 	assert(amount >= 0.0, "amount must be non-negative")
-	current_nutrition = min(max_nutrition, current_nutrition + amount)
-
-func reduce_hygiene(amount: float) -> void:
-	assert(amount >= 0.0, "amount must be non-negative")
-	current_hygiene = max(0.0, current_hygiene - amount)
-
-func restore_hygiene(amount: float) -> void:
-	assert(amount >= 0.0, "amount must be non-negative")
-	current_hygiene = min(max_hygiene, current_hygiene + amount)
+	current_energy = min(max_energy, current_energy + amount)
 
 func reduce_psyche(amount: float) -> void:
 	assert(amount >= 0.0, "amount must be non-negative")
@@ -114,5 +109,5 @@ func apply_neglect_damage(damage_amount: float) -> void:
 	var whole_damage: int = int(floor(_damage_buffer))
 	if whole_damage <= 0:
 		return
-	health.take_damage(whole_damage)
+	integrity.take_damage(whole_damage)
 	_damage_buffer -= whole_damage

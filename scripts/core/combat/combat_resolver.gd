@@ -33,7 +33,7 @@ static func resolve_attack(state: GameState):
 			player_damage,
 			false,
 			0,
-			state.player.current_hit_points(),
+			state.player.current_integrity(),
 			combat_skill_gained,
 			CombatResolutionScript.Kind.ENEMY_DEFEATED)
 		state.win_combat(victory)
@@ -46,7 +46,7 @@ static func resolve_attack(state: GameState):
 		enemy_damage = _roll_inclusive(state,
 			encounter.enemy.minimum_damage,
 			encounter.enemy.maximum_damage)
-		state.player.health.take_damage(enemy_damage)
+		state.player.integrity.take_damage(enemy_damage)
 
 	var resolution: int = (
 		CombatResolutionScript.Kind.ONGOING
@@ -61,7 +61,7 @@ static func resolve_attack(state: GameState):
 		player_damage,
 		enemy_hit,
 		enemy_damage,
-		state.player.current_hit_points(),
+		state.player.current_integrity(),
 		combat_skill_gained,
 		resolution)
 

@@ -34,9 +34,9 @@ func _test_take_damage_clamps_to_zero_and_marks_defeated() -> void:
 	var encounter = CombatEncounterScript.new(enemy)
 	encounter.take_damage(3)
 	assert(encounter.current_health == 2,
-		"expected 2 HP after 3 damage, got %d" % encounter.current_health)
-	assert(not encounter.is_defeated(), "still alive at 2 HP")
+		"expected health 2 after 3 damage, got %d" % encounter.current_health)
+	assert(not encounter.is_defeated(), "still alive at health 2")
 	encounter.take_damage(99)
 	assert(encounter.current_health == 0,
-		"expected 0 HP after overkill, got %d" % encounter.current_health)
-	assert(encounter.is_defeated(), "expected defeated at 0 HP")
+		"expected health 0 after overkill, got %d" % encounter.current_health)
+	assert(encounter.is_defeated(), "expected defeated at health 0")

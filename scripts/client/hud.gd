@@ -51,10 +51,12 @@ const _SPRING_SEASON_COLOR: Color = Color8(121, 196, 104)
 const _PORTRAIT_BG_COLOR: Color = Color8(58, 66, 71)
 const _PORTRAIT_BORDER_COLOR: Color = Color8(128, 143, 151)
 const _BAR_BG_COLOR: Color = Color8(45, 51, 56)
-const _HP_BAR_COLOR: Color = Color8(207, 72, 72)
-const _NUTRITION_BAR_COLOR: Color = Color8(220, 191, 73)
-const _HYGIENE_BAR_COLOR: Color = Color8(87, 182, 101)
+const _INTEGRITY_BAR_COLOR: Color = Color8(207, 72, 72)
+const _ENERGY_BAR_COLOR: Color = Color8(220, 191, 73)
 const _PSYCHE_BAR_COLOR: Color = Color8(214, 88, 198)
+
+const _PORTRAIT_BASE_PATH: String = "res://resources/sprites/characters/portraits/"
+const _DEFAULT_PORTRAIT_FILENAME: String = "Unknown.png"
 
 const _CREW_SLOT_COUNT: int = 8
 const _CREW_DEFAULT_COLUMNS: int = 2
@@ -78,6 +80,7 @@ var _crew_slots_root: Control
 var _crew_card_boxes: Array[VBoxContainer] = []
 var _crew_card_aspect_ratio: float = 0.0
 var _crew_zoom_out_factor: float = 1.0
+var _active_crew_card_count: int = 1
 var _date_value_label: Label
 var _outdoor_temperature_value_label: Label
 var _stat_chip_title_labels: Array[Label] = []
@@ -89,17 +92,16 @@ var _temperature_unit: int = TemperatureUnit.FAHRENHEIT
 var _crew_cards: Array[Control] = []
 var _crew_separators: Array[ColorRect] = []
 var _crew_name_labels: Array[Label] = []
-var _crew_empty_labels: Array[Label] = []
 var _crew_metric_boxes: Array[VBoxContainer] = []
 var _crew_metric_title_labels: Array[Label] = []
-var _crew_hp_value_labels: Array[Label] = []
-var _crew_nutrition_value_labels: Array[Label] = []
-var _crew_hygiene_value_labels: Array[Label] = []
+var _crew_integrity_value_labels: Array[Label] = []
+var _crew_energy_value_labels: Array[Label] = []
 var _crew_psyche_value_labels: Array[Label] = []
-var _crew_hp_bars: Array[ProgressBar] = []
-var _crew_nutrition_bars: Array[ProgressBar] = []
-var _crew_hygiene_bars: Array[ProgressBar] = []
+var _crew_integrity_bars: Array[ProgressBar] = []
+var _crew_energy_bars: Array[ProgressBar] = []
 var _crew_psyche_bars: Array[ProgressBar] = []
+var _crew_portrait_textures: Array[TextureRect] = []
+var _portrait_cache: Dictionary = {}
 var _expedition_button: Button
 var _crafting_button: Button
 var _inventory_button: Button
@@ -111,6 +113,11 @@ var _popup_panel: PanelContainer
 var _popup_box: VBoxContainer
 var _popup_title_label: Label
 var _popup_close_button: Button
+var _popup_character_view: VBoxContainer
+var _popup_character_portrait: TextureRect
+var _popup_character_physique_label: Label
+var _popup_character_aptitude_label: Label
+var _popup_character_slot: int = -1
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
@@ -125,6 +132,8 @@ func _ready() -> void:
 func refresh(state: GameState, interaction_mode: int) -> void:
 	var outdoor_temperature: float = SurvivalRules.get_outdoor_temperature(state)
 	var phase: int = DayNightCycle.get_phase(state.clock)
+	# Phase 7 only exposes the player card; future crew members can raise this count.
+	_set_active_crew_card_count(1)
 	_date_value_label.text = "%s  %s Day %02d" % [
 		_time_of_day_text(state.clock),
 		Season.Kind.keys()[state.clock.season].capitalize(),
@@ -135,36 +144,34 @@ func refresh(state: GameState, interaction_mode: int) -> void:
 	_day_night_value_label.text = DayNightCycle.phase_label(phase)
 	_day_night_value_label.add_theme_color_override("font_color", _day_night_color(phase))
 	_crew_name_labels[0].text = "Crew 01"
-	_crew_empty_labels[0].visible = false
-	_crew_metric_boxes[0].visible = true
+	_crew_portrait_textures[0].texture = _get_portrait_texture(state.player.portrait_filename)
 	_set_metric_bar(
-		_crew_hp_bars[0],
-		_crew_hp_value_labels[0],
-		float(state.player.current_hit_points()),
-		float(state.player.max_hit_points()),
-		"%d / %d" % [state.player.current_hit_points(), state.player.max_hit_points()])
+		_crew_integrity_bars[0],
+		_crew_integrity_value_labels[0],
+		float(state.player.current_integrity()),
+		float(state.player.max_integrity()),
+		"%d / %d" % [state.player.current_integrity(), state.player.max_integrity()])
 	_set_metric_bar(
-		_crew_nutrition_bars[0],
-		_crew_nutrition_value_labels[0],
-		state.player.current_nutrition,
-		state.player.max_nutrition,
-		"%0.0f / %0.0f" % [state.player.current_nutrition, state.player.max_nutrition])
-	_set_metric_bar(
-		_crew_hygiene_bars[0],
-		_crew_hygiene_value_labels[0],
-		state.player.current_hygiene,
-		state.player.max_hygiene,
-		"%0.0f / %0.0f" % [state.player.current_hygiene, state.player.max_hygiene])
+		_crew_energy_bars[0],
+		_crew_energy_value_labels[0],
+		state.player.current_energy,
+		state.player.max_energy,
+		"%0.0f / %0.0f" % [state.player.current_energy, state.player.max_energy])
 	_set_metric_bar(
 		_crew_psyche_bars[0],
 		_crew_psyche_value_labels[0],
 		state.player.current_psyche,
 		state.player.max_psyche,
 		"%0.0f / %0.0f" % [state.player.current_psyche, state.player.max_psyche])
+	var unknown_portrait: Texture2D = _get_portrait_texture(_DEFAULT_PORTRAIT_FILENAME)
 	for slot_index in range(1, _CREW_SLOT_COUNT):
 		_crew_name_labels[slot_index].text = "Crew %02d" % [slot_index + 1]
-		_crew_empty_labels[slot_index].visible = true
-		_crew_metric_boxes[slot_index].visible = false
+		_crew_portrait_textures[slot_index].texture = unknown_portrait
+		_set_metric_bar(_crew_integrity_bars[slot_index], _crew_integrity_value_labels[slot_index], 0.0, 0.0, "0 / 0")
+		_set_metric_bar(_crew_energy_bars[slot_index], _crew_energy_value_labels[slot_index], 0.0, 0.0, "0 / 0")
+		_set_metric_bar(_crew_psyche_bars[slot_index], _crew_psyche_value_labels[slot_index], 0.0, 0.0, "0 / 0")
+	if _popup_character_slot >= 0:
+		_refresh_character_popup(state)
 	var season_color: Color = _season_color(state.clock.season)
 	_date_value_label.add_theme_color_override("font_color", season_color)
 	_outdoor_temperature_value_label.add_theme_color_override("font_color", _temperature_color(state.player))
@@ -213,6 +220,13 @@ func adjust_crew_zoom_steps(delta_steps: int) -> bool:
 	_layout_crew_cards()
 	return true
 
+func _set_active_crew_card_count(card_count: int) -> void:
+	var clamped_count: int = clampi(card_count, 0, _crew_cards.size())
+	if clamped_count == _active_crew_card_count:
+		return
+	_active_crew_card_count = clamped_count
+	_layout_crew_cards()
+
 func _on_expedition_button_pressed() -> void:
 	_open_popup("Expedition")
 
@@ -259,15 +273,12 @@ func _build_shell() -> void:
 		var card_parts: Dictionary = _make_crew_card(_crew_slots_root, slot_index)
 		_crew_cards.append(card_parts["card"])
 		_crew_name_labels.append(card_parts["name"])
-		_crew_empty_labels.append(card_parts["empty"])
 		_crew_metric_boxes.append(card_parts["metrics"])
-		_crew_hp_value_labels.append(card_parts["hp_value"])
-		_crew_nutrition_value_labels.append(card_parts["nutrition_value"])
-		_crew_hygiene_value_labels.append(card_parts["hygiene_value"])
+		_crew_integrity_value_labels.append(card_parts["integrity_value"])
+		_crew_energy_value_labels.append(card_parts["energy_value"])
 		_crew_psyche_value_labels.append(card_parts["psyche_value"])
-		_crew_hp_bars.append(card_parts["hp_bar"])
-		_crew_nutrition_bars.append(card_parts["nutrition_bar"])
-		_crew_hygiene_bars.append(card_parts["hygiene_bar"])
+		_crew_integrity_bars.append(card_parts["integrity_bar"])
+		_crew_energy_bars.append(card_parts["energy_bar"])
 		_crew_psyche_bars.append(card_parts["psyche_bar"])
 
 	_top_panel = PanelContainer.new()
@@ -322,6 +333,7 @@ func _build_popup() -> void:
 	dim.color = Color(0.0, 0.0, 0.0, 0.55)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.gui_input.connect(_on_dim_input)
 	_popup_root.add_child(dim)
 
 	_popup_panel = PanelContainer.new()
@@ -354,18 +366,70 @@ func _build_popup() -> void:
 	_popup_close_button.pressed.connect(_close_popup)
 	header.add_child(_popup_close_button)
 
-	var content: Control = Control.new()
-	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_popup_box.add_child(content)
+	_popup_character_view = VBoxContainer.new()
+	_popup_character_view.visible = false
+	_popup_character_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_popup_character_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_popup_character_view.add_theme_constant_override("separation", _BASE_POPUP_SEPARATION_PX)
+	_popup_box.add_child(_popup_character_view)
+
+	_popup_character_portrait = TextureRect.new()
+	_popup_character_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_popup_character_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_popup_character_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_popup_character_portrait.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_popup_character_portrait.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_popup_character_view.add_child(_popup_character_portrait)
+
+	_popup_character_physique_label = Label.new()
+	_popup_character_physique_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_popup_character_physique_label.add_theme_font_size_override("font_size", _LABEL_FONT_SIZE)
+	_popup_character_view.add_child(_popup_character_physique_label)
+
+	_popup_character_aptitude_label = Label.new()
+	_popup_character_aptitude_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_popup_character_aptitude_label.add_theme_font_size_override("font_size", _LABEL_FONT_SIZE)
+	_popup_character_view.add_child(_popup_character_aptitude_label)
 
 func _open_popup(title: String) -> void:
+	_popup_character_slot = -1
+	_popup_character_view.visible = false
 	_popup_title_label.text = title
 	_popup_root.visible = true
 
+func _open_character_popup(slot_index: int) -> void:
+	_popup_character_slot = slot_index
+	_popup_character_view.visible = true
+	_popup_title_label.text = _crew_name_labels[slot_index].text
+	_popup_root.visible = true
+
 func _close_popup() -> void:
+	_popup_character_slot = -1
+	_popup_character_view.visible = false
 	_popup_root.visible = false
+
+func _refresh_character_popup(state: GameState) -> void:
+	var portrait_filename: String = _DEFAULT_PORTRAIT_FILENAME
+	var physique: int = 0
+	var aptitude: int = 0
+	if _popup_character_slot == 0:
+		portrait_filename = state.player.portrait_filename
+		physique = state.player.physique
+		aptitude = state.player.aptitude
+	_popup_character_portrait.texture = _get_portrait_texture(portrait_filename)
+	_popup_character_physique_label.text = "Physique: %d" % physique
+	_popup_character_aptitude_label.text = "Aptitude: %d" % aptitude
+
+func _get_portrait_texture(filename: String) -> Texture2D:
+	var key: String = filename if not filename.is_empty() else _DEFAULT_PORTRAIT_FILENAME
+	if _portrait_cache.has(key):
+		return _portrait_cache[key]
+	var path: String = _PORTRAIT_BASE_PATH + key
+	if not ResourceLoader.exists(path):
+		path = _PORTRAIT_BASE_PATH + _DEFAULT_PORTRAIT_FILENAME
+	var texture: Texture2D = load(path) as Texture2D
+	_portrait_cache[key] = texture
+	return texture
 
 func _update_layout() -> void:
 	if _crew_panel == null or _top_panel == null or _play_area_panel == null:
@@ -461,7 +525,6 @@ func _apply_responsive_theme(ui_scale: float) -> void:
 	var card_spacing: int = _scaled_font(_BASE_CARD_BOX_SEPARATION_PX, ui_scale, 1)
 	var metric_spacing: int = _scaled_font(_BASE_METRIC_BOX_SEPARATION_PX, ui_scale, 1)
 	var card_title_font_size: int = _scaled_font(_CARD_TITLE_FONT_SIZE, ui_scale, 9)
-	var body_font_size: int = _scaled_font(_BODY_FONT_SIZE, ui_scale, 8)
 	var metric_font_size: int = _scaled_font(_BODY_FONT_SIZE - 2, ui_scale, 7)
 	var stat_title_font_size: int = _scaled_font(_STAT_TITLE_FONT_SIZE, ui_scale, 7)
 	var stat_value_font_size: int = _scaled_font(_STAT_VALUE_FONT_SIZE, ui_scale, 9)
@@ -526,24 +589,18 @@ func _apply_responsive_theme(ui_scale: float) -> void:
 
 	for label in _crew_name_labels:
 		label.add_theme_font_size_override("font_size", card_title_font_size)
-	for label in _crew_empty_labels:
-		label.add_theme_font_size_override("font_size", body_font_size)
 	for label in _crew_metric_title_labels:
 		_apply_metric_label_style(label, metric_font_size, metric_outline_size)
-	for label in _crew_hp_value_labels:
+	for label in _crew_integrity_value_labels:
 		_apply_metric_label_style(label, metric_font_size, metric_outline_size)
-	for label in _crew_nutrition_value_labels:
-		_apply_metric_label_style(label, metric_font_size, metric_outline_size)
-	for label in _crew_hygiene_value_labels:
+	for label in _crew_energy_value_labels:
 		_apply_metric_label_style(label, metric_font_size, metric_outline_size)
 	for label in _crew_psyche_value_labels:
 		_apply_metric_label_style(label, metric_font_size, metric_outline_size)
 
-	for bar in _crew_hp_bars:
+	for bar in _crew_integrity_bars:
 		bar.custom_minimum_size = Vector2(0.0, bar_height)
-	for bar in _crew_nutrition_bars:
-		bar.custom_minimum_size = Vector2(0.0, bar_height)
-	for bar in _crew_hygiene_bars:
+	for bar in _crew_energy_bars:
 		bar.custom_minimum_size = Vector2(0.0, bar_height)
 	for bar in _crew_psyche_bars:
 		bar.custom_minimum_size = Vector2(0.0, bar_height)
@@ -587,9 +644,11 @@ static func _make_panel_style(bg_color: Color, border_color: Color, radius: int,
 
 func _make_crew_card(parent: Control, slot_index: int) -> Dictionary:
 	var card: Control = Control.new()
-	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.clip_contents = true
 	card.custom_minimum_size = Vector2(0.0, _BASE_CARD_MIN_HEIGHT_PX)
+	card.gui_input.connect(_on_crew_card_input.bind(slot_index))
 	parent.add_child(card)
 
 	var box: VBoxContainer = VBoxContainer.new()
@@ -602,12 +661,26 @@ func _make_crew_card(parent: Control, slot_index: int) -> Dictionary:
 	card.add_child(box)
 	_crew_card_boxes.append(box)
 
-	var portrait: ColorRect = ColorRect.new()
-	portrait.color = _PORTRAIT_BG_COLOR
-	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	portrait.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	portrait.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(portrait)
+	var portrait_container: Control = Control.new()
+	portrait_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	portrait_container.clip_contents = true
+	portrait_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	portrait_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(portrait_container)
+
+	var portrait_bg: ColorRect = ColorRect.new()
+	portrait_bg.color = _PORTRAIT_BG_COLOR
+	portrait_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	portrait_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	portrait_container.add_child(portrait_bg)
+
+	var portrait_texture: TextureRect = TextureRect.new()
+	portrait_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	portrait_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	portrait_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	portrait_texture.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	portrait_container.add_child(portrait_texture)
+	_crew_portrait_textures.append(portrait_texture)
 
 	var name_label: Label = Label.new()
 	name_label.text = "Crew %02d" % [slot_index + 1]
@@ -619,30 +692,18 @@ func _make_crew_card(parent: Control, slot_index: int) -> Dictionary:
 	metrics_box.add_theme_constant_override("separation", _BASE_METRIC_BOX_SEPARATION_PX)
 	box.add_child(metrics_box)
 
-	var hp_parts: Array = _make_metric_row(metrics_box, "HP", _HP_BAR_COLOR)
-	var nutrition_parts: Array = _make_metric_row(metrics_box, "Nutrition", _NUTRITION_BAR_COLOR)
-	var hygiene_parts: Array = _make_metric_row(metrics_box, "Hygiene", _HYGIENE_BAR_COLOR)
+	var integrity_parts: Array = _make_metric_row(metrics_box, "Integrity", _INTEGRITY_BAR_COLOR)
+	var energy_parts: Array = _make_metric_row(metrics_box, "Energy", _ENERGY_BAR_COLOR)
 	var psyche_parts: Array = _make_metric_row(metrics_box, "Psyche", _PSYCHE_BAR_COLOR)
-
-	var empty_label: Label = Label.new()
-	empty_label.text = "Unassigned"
-	empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	empty_label.add_theme_font_size_override("font_size", _BODY_FONT_SIZE)
-	empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	empty_label.visible = false
-	box.add_child(empty_label)
 
 	return {
 		"card": card,
 		"name": name_label,
-		"empty": empty_label,
 		"metrics": metrics_box,
-		"hp_value": hp_parts[0],
-		"hp_bar": hp_parts[1],
-		"nutrition_value": nutrition_parts[0],
-		"nutrition_bar": nutrition_parts[1],
-		"hygiene_value": hygiene_parts[0],
-		"hygiene_bar": hygiene_parts[1],
+		"integrity_value": integrity_parts[0],
+		"integrity_bar": integrity_parts[1],
+		"energy_value": energy_parts[0],
+		"energy_bar": energy_parts[1],
 		"psyche_value": psyche_parts[0],
 		"psyche_bar": psyche_parts[1],
 	}
@@ -702,18 +763,27 @@ func _layout_crew_cards() -> void:
 	var panel_size: Vector2 = _crew_slots_root.size
 	if panel_size.x <= 0.0 or panel_size.y <= 0.0:
 		return
+	var visible_card_count: int = mini(_active_crew_card_count, _crew_cards.size())
+	for slot_index in range(_crew_cards.size()):
+		_crew_cards[slot_index].visible = slot_index < visible_card_count
+	if _crew_cards.is_empty():
+		return
+	if visible_card_count <= 0:
+		_sync_crew_separators(0, 0, Vector2.ZERO, Vector2.ZERO)
+		return
 	if _crew_card_aspect_ratio <= 0.0:
 		_crew_card_aspect_ratio = calculate_default_crew_card_aspect_ratio(panel_size)
+	var layout_card_count: int = calculate_crew_layout_card_count(visible_card_count)
 	var layout_info: Dictionary = calculate_crew_card_layout(
 		panel_size,
-		_crew_cards.size(),
+		layout_card_count,
 		_crew_card_aspect_ratio,
 		_crew_zoom_out_factor)
 	var columns: int = layout_info["columns"]
 	var rows: int = layout_info["rows"]
 	var card_size: Vector2 = layout_info["card_size"]
 	var grid_position: Vector2 = layout_info["grid_position"]
-	for slot_index in range(_crew_cards.size()):
+	for slot_index in range(visible_card_count):
 		var column: int = slot_index % columns
 		var row: int = slot_index / columns
 		var card: Control = _crew_cards[slot_index]
@@ -721,6 +791,9 @@ func _layout_crew_cards() -> void:
 			card_size.x * float(column),
 			card_size.y * float(row))
 		card.size = card_size
+	if visible_card_count == 1:
+		_sync_crew_separators(1, 1, card_size, grid_position)
+		return
 	_sync_crew_separators(columns, rows, card_size, grid_position)
 
 func _sync_crew_separators(columns: int, rows: int, card_size: Vector2, grid_position: Vector2) -> void:
@@ -759,6 +832,13 @@ static func calculate_default_crew_card_aspect_ratio(panel_size: Vector2) -> flo
 	var default_card_width: float = panel_size.x / float(_CREW_DEFAULT_COLUMNS)
 	var default_card_height: float = panel_size.y / float(_CREW_DEFAULT_ROWS)
 	return default_card_width / maxf(1.0, default_card_height)
+
+static func calculate_crew_layout_card_count(active_card_count: int) -> int:
+	if active_card_count <= 0:
+		return 0
+	if active_card_count == 1:
+		return 2
+	return active_card_count
 
 static func calculate_crew_card_layout(panel_size: Vector2, card_count: int, card_aspect_ratio: float, zoom_out_factor: float = 1.0) -> Dictionary:
 	if card_count <= 0 or panel_size.x <= 0.0 or panel_size.y <= 0.0:
@@ -1025,6 +1105,40 @@ func _on_temperature_chip_input(event: InputEvent) -> void:
 		var button_event: InputEventMouseButton = event
 		if button_event.pressed and button_event.button_index == MOUSE_BUTTON_LEFT:
 			_cycle_temperature_unit()
+
+func _on_crew_card_input(event: InputEvent, slot_index: int) -> void:
+	if slot_index < 0 or slot_index >= _active_crew_card_count:
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var button_event: InputEventMouseButton = event
+	if not button_event.pressed:
+		return
+	var crew_name: String = _crew_name_labels[slot_index].text
+	if button_event.button_index == MOUSE_BUTTON_LEFT:
+		_open_character_popup(slot_index)
+	elif button_event.button_index == MOUSE_BUTTON_RIGHT:
+		_open_popup("%s — Activities" % crew_name)
+
+func _on_dim_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var button_event: InputEventMouseButton = event
+	if not button_event.pressed:
+		return
+	var click_pos: Vector2 = button_event.position
+	if button_event.button_index == MOUSE_BUTTON_LEFT:
+		for top_button in _top_buttons:
+			if top_button.get_global_rect().has_point(click_pos):
+				top_button.pressed.emit()
+				return
+	if button_event.button_index == MOUSE_BUTTON_LEFT or button_event.button_index == MOUSE_BUTTON_RIGHT:
+		for slot_index in range(_crew_cards.size()):
+			if not _crew_cards[slot_index].visible:
+				continue
+			if _crew_cards[slot_index].get_global_rect().has_point(click_pos):
+				_on_crew_card_input(button_event, slot_index)
+				return
 
 func _cycle_temperature_unit() -> void:
 	_temperature_unit = (_temperature_unit + 1) % TemperatureUnit.size()

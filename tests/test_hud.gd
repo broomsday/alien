@@ -9,6 +9,8 @@ func _init() -> void:
 		return
 	if not _test_crew_card_layout_preserves_the_default_aspect_ratio():
 		return
+	if not _test_single_active_crew_card_uses_the_two_slot_stack():
+		return
 	if not _test_crew_card_zoom_out_chooses_a_smaller_grid_fit():
 		return
 	print("test_hud: ok")
@@ -70,6 +72,24 @@ func _test_crew_card_layout_preserves_the_default_aspect_ratio() -> bool:
 		return false
 	if not _require(is_equal_approx(card_size.x / card_size.y, card_aspect_ratio),
 		"expected card aspect ratio %s, got %s" % [card_aspect_ratio, card_size.x / card_size.y]):
+		return false
+	return true
+
+func _test_single_active_crew_card_uses_the_two_slot_stack() -> bool:
+	var panel_size: Vector2 = Vector2(264.0, 1056.0)
+	var card_aspect_ratio: float = HudScript.calculate_default_crew_card_aspect_ratio(panel_size)
+	var layout_card_count: int = HudScript.calculate_crew_layout_card_count(1)
+	var layout: Dictionary = HudScript.calculate_crew_card_layout(
+		panel_size,
+		layout_card_count,
+		card_aspect_ratio,
+		1.0)
+
+	if not _require(layout_card_count == 2,
+		"expected one active crew card to reserve a two-card stack, got %d slots" % layout_card_count):
+		return false
+	if not _require(layout["columns"] == 1 and layout["rows"] == 2,
+		"expected one active crew card to use a 1x2 layout, got %sx%s" % [layout["columns"], layout["rows"]]):
 		return false
 	return true
 
