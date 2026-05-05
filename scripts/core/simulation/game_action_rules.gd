@@ -4,6 +4,7 @@ extends RefCounted
 const EnemyCatalogScript = preload("res://scripts/core/combat/enemy_catalog.gd")
 const CombatEncounterScript = preload("res://scripts/core/combat/combat_encounter.gd")
 const CombatResolverScript = preload("res://scripts/core/combat/combat_resolver.gd")
+const ActorActionRulesScript = preload("res://scripts/core/simulation/actor_action_rules.gd")
 
 # Phase 6 adds the active_combat short-circuit at the top of
 # can_start_action: while combat is in progress, only ATTACK is
@@ -11,7 +12,7 @@ const CombatResolverScript = preload("res://scripts/core/combat/combat_resolver.
 # HOSTILE_ANIMAL into state.begin_combat; the ATTACK branch calls
 # CombatResolver.resolve_attack.
 
-static func can_start_action(state: GameState, action_kind: int, target_tile: Variant) -> bool:
+static func can_start_action(state: GameState, action_kind: int, target_tile: Variant, actor_slot: int = 0) -> bool:
 	if not state.player.is_alive() or state.active_action != null:
 		return false
 	if state.active_combat != null:
@@ -35,19 +36,26 @@ static func can_start_action(state: GameState, action_kind: int, target_tile: Va
 			if not RecipeRules.can_afford(state.inventory, RecipeId.Id.FURNACE):
 				return false
 			return state.world.can_build_furnace_at(target_tile)
+		GameActionKind.Kind.HARVEST:
+			return ActorActionRulesScript.can_actor_do_action(
+				state,
+				actor_slot,
+				action_kind,
+				target_tile)
 		GameActionKind.Kind.ATTACK:
 			return false
 		_:
 			return true
 
 static func try_create_action(state: GameState, command: StartActionCommand) -> GameAction:
-	if not can_start_action(state, command.action_kind, command.target_tile):
+	if not can_start_action(state, command.action_kind, command.target_tile, command.actor_slot):
 		return null
 	return GameAction.new(
 		command.action_kind,
 		_get_duration_seconds(command.action_kind),
 		_get_description(command.action_kind),
-		command.target_tile)
+		command.target_tile,
+		command.actor_slot)
 
 static func complete_action(state: GameState, action: GameAction) -> void:
 	match action.kind:
@@ -69,6 +77,9 @@ static func complete_action(state: GameState, action: GameAction) -> void:
 			else:
 				var enemy = EnemyCatalogScript.get_for_encounter(outcome.encounter_kind)
 				state.begin_combat(CombatEncounterScript.new(enemy), outcome)
+		GameActionKind.Kind.HARVEST:
+			if action.target_tile is Vector2i:
+				state.harvest_fruit_bush(action.target_tile)
 		GameActionKind.Kind.ATTACK:
 			CombatResolverScript.resolve_attack(state)
 		_:
@@ -93,6 +104,8 @@ static func _get_duration_seconds(action_kind: int) -> float:
 			return 5.0
 		GameActionKind.Kind.CRAFT:
 			return 2.0
+		GameActionKind.Kind.HARVEST:
+			return GameBalance.HARVEST_DURATION_REAL_SECONDS
 		GameActionKind.Kind.ATTACK:
 			return 1.5
 		_:
@@ -111,6 +124,8 @@ static func _get_description(action_kind: int) -> String:
 			return "Expedition"
 		GameActionKind.Kind.CRAFT:
 			return "Crafting"
+		GameActionKind.Kind.HARVEST:
+			return "Harvesting"
 		GameActionKind.Kind.ATTACK:
 			return "Attacking"
 		_:

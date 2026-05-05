@@ -13,8 +13,10 @@ const ExpeditionOutcomeScript = preload("res://scripts/core/simulation/expeditio
 const ExpeditionEncounterKindScript = preload("res://scripts/core/simulation/expedition_encounter_kind.gd")
 const WorldTileTypeScript = preload("res://scripts/core/world/world_tile_type.gd")
 const ItemIdScript = preload("res://scripts/core/inventory/item_id.gd")
+const GameBalanceScript = preload("res://scripts/core/simulation/game_balance.gd")
 const RecipeIdScript = preload("res://scripts/core/crafting/recipe_id.gd")
 const EquippedWeaponScript = preload("res://scripts/core/gameplay/equipped_weapon.gd")
+const WorldObjectKindScript = preload("res://scripts/core/world/world_object_kind.gd")
 const EnemyDefinitionScript = preload("res://scripts/core/combat/enemy_definition.gd")
 const EnemyKindScript = preload("res://scripts/core/combat/enemy_kind.gd")
 const CombatEncounterScript = preload("res://scripts/core/combat/combat_encounter.gd")
@@ -31,6 +33,7 @@ func _init() -> void:
 	_test_advance_when_move_command_targets_walkable_tile_moves_player()
 	_test_advance_when_move_command_targets_blocked_tile_does_not_move()
 	_test_advance_when_build_furnace_completes_consumes_scrap_and_sets_furnace_tile()
+	_test_advance_when_harvest_completes_moves_actor_consumes_time_and_removes_bush()
 	_test_advance_when_fuel_furnace_command_lights_furnace()
 	_test_advance_when_fuel_furnace_command_targets_non_furnace_does_nothing()
 	_test_advance_when_craft_recipe_command_simple_weapon_equips_weapon()
@@ -227,6 +230,59 @@ func _test_advance_when_build_furnace_completes_consumes_scrap_and_sets_furnace_
 	assert(not state.has_active_furnace_at(target),
 		"freshly built furnace should not be active until fueled")
 
+func _test_advance_when_harvest_completes_moves_actor_consumes_time_and_removes_bush() -> void:
+	var state: GameState = GameStateFactoryScript.create_new(7)
+	var step: SimulationStep = SimulationStepScript.new()
+	var bush_tile: Vector2i = _first_fruit_bush_tile(state)
+	var starting_time: float = state.clock.time_of_day_seconds
+	var starting_berries: int = state.inventory.get_count(ItemIdScript.Id.BERRIES)
+	var starting_wood: int = state.inventory.get_count(ItemIdScript.Id.WOOD)
+	var starting_berry_seeds: int = state.inventory.get_count(ItemIdScript.Id.BERRY_SEEDS)
+
+	step.advance(state, 0.0, [StartActionCommandScript.new(GameActionKindScript.Kind.HARVEST, bush_tile, 0)])
+
+	assert(state.player.tile_position == bush_tile,
+		"expected player to move to bush tile %s, got %s" % [bush_tile, state.player.tile_position])
+	assert(state.active_action != null, "expected HARVEST action to start")
+	assert(state.active_action.kind == GameActionKindScript.Kind.HARVEST,
+		"expected HARVEST action kind")
+	assert(state.has_world_object_kind(bush_tile, WorldObjectKindScript.Kind.FRUIT_BUSH),
+		"expected bush to remain during harvest")
+
+	var half_duration: float = GameBalanceScript.HARVEST_DURATION_REAL_SECONDS * 0.5
+	step.advance(state, half_duration, [])
+	assert(state.active_action != null, "expected harvest to remain active halfway through")
+	step.advance(state, half_duration, [])
+
+	assert(state.active_action == null, "expected harvest to complete")
+	assert(state.last_completed_action_kind == GameActionKindScript.Kind.HARVEST,
+		"expected HARVEST completion recorded")
+	assert(not state.has_world_object_kind(bush_tile, WorldObjectKindScript.Kind.FRUIT_BUSH),
+		"expected bush removed after harvest")
+	assert(state.inventory.get_count(ItemIdScript.Id.BERRIES) > starting_berries,
+		"expected berries added to inventory")
+	assert(state.inventory.get_count(ItemIdScript.Id.WOOD) > starting_wood,
+		"expected wood added to inventory")
+	assert(state.inventory.get_count(ItemIdScript.Id.BERRY_SEEDS) > starting_berry_seeds,
+		"expected berry seeds added to inventory")
+	assert(absf((state.clock.time_of_day_seconds - starting_time) - GameBalanceScript.HARVEST_DURATION_GAME_SECONDS) < 0.001,
+		"expected harvest to consume %fs of game time, got %f" % [
+			GameBalanceScript.HARVEST_DURATION_GAME_SECONDS,
+			state.clock.time_of_day_seconds - starting_time,
+		])
+	assert(state.last_harvest_rewards["berries"] >= GameBalanceScript.FRUIT_BUSH_BERRIES_MIN,
+		"expected berries within range, got %s" % [state.last_harvest_rewards])
+	assert(state.last_harvest_rewards["berries"] <= GameBalanceScript.FRUIT_BUSH_BERRIES_MAX,
+		"expected berries within range, got %s" % [state.last_harvest_rewards])
+	assert(state.last_harvest_rewards["wood"] >= GameBalanceScript.FRUIT_BUSH_WOOD_MIN,
+		"expected wood within range, got %s" % [state.last_harvest_rewards])
+	assert(state.last_harvest_rewards["wood"] <= GameBalanceScript.FRUIT_BUSH_WOOD_MAX,
+		"expected wood within range, got %s" % [state.last_harvest_rewards])
+	assert(state.last_harvest_rewards["berry_seeds"] >= GameBalanceScript.FRUIT_BUSH_BERRY_SEEDS_MIN,
+		"expected berry_seeds within range, got %s" % [state.last_harvest_rewards])
+	assert(state.last_harvest_rewards["berry_seeds"] <= GameBalanceScript.FRUIT_BUSH_BERRY_SEEDS_MAX,
+		"expected berry_seeds within range, got %s" % [state.last_harvest_rewards])
+
 func _test_advance_when_fuel_furnace_command_lights_furnace() -> void:
 	var state: GameState = GameStateFactoryScript.create_new()
 	var step: SimulationStep = SimulationStepScript.new()
@@ -349,3 +405,10 @@ func _test_advance_when_expedition_resolves_to_hostile_animal_begins_combat() ->
 		"expected pending_expedition_outcome set when combat begins")
 	assert(state.active_combat.enemy.kind == EnemyKindScript.Kind.RAZOR_MAW,
 		"expected RAZOR_MAW enemy")
+
+func _first_fruit_bush_tile(state: GameState) -> Vector2i:
+	for tile_position in state.world_objects.object_tiles():
+		if state.has_world_object_kind(tile_position, WorldObjectKindScript.Kind.FRUIT_BUSH):
+			return tile_position
+	assert(false, "expected at least one fruit bush")
+	return Vector2i.ZERO

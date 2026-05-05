@@ -7,6 +7,7 @@ const StartActionCommandScript = preload("res://scripts/core/simulation/start_ac
 const SimulationStepScript = preload("res://scripts/core/simulation/simulation_step.gd")
 const ItemIdScript = preload("res://scripts/core/inventory/item_id.gd")
 const WorldTileTypeScript = preload("res://scripts/core/world/world_tile_type.gd")
+const WorldObjectKindScript = preload("res://scripts/core/world/world_object_kind.gd")
 const EnemyDefinitionScript = preload("res://scripts/core/combat/enemy_definition.gd")
 const EnemyKindScript = preload("res://scripts/core/combat/enemy_kind.gd")
 const CombatEncounterScript = preload("res://scripts/core/combat/combat_encounter.gd")
@@ -16,6 +17,7 @@ func _init() -> void:
 	_test_can_start_build_wall_requires_scrap_and_replaceable_tile()
 	_test_can_start_action_returns_false_when_an_action_is_active()
 	_test_can_start_build_furnace_requires_recipe_and_excavated_floor()
+	_test_can_start_harvest_requires_fruit_bush_and_valid_actor()
 	_test_can_start_attack_only_during_active_combat()
 	_test_can_start_excavate_or_build_returns_false_during_combat()
 	print("test_game_action_rules: ok")
@@ -111,3 +113,25 @@ func _test_can_start_excavate_or_build_returns_false_during_combat() -> void:
 		"BUILD_FURNACE should be invalid during combat")
 	assert(not GameActionRulesScript.can_start_action(state, GameActionKindScript.Kind.EXPEDITION, null),
 		"EXPEDITION should be invalid during combat")
+
+func _test_can_start_harvest_requires_fruit_bush_and_valid_actor() -> void:
+	var state: GameState = GameStateFactoryScript.create_new()
+	var bush_tile: Vector2i = _first_fruit_bush_tile(state)
+	var empty_surface_tile: Vector2i = Vector2i(0, state.world.surface_row - 1)
+	if empty_surface_tile == bush_tile:
+		empty_surface_tile = Vector2i(state.world.width - 1, state.world.surface_row - 1)
+	assert(state.has_world_object_kind(bush_tile, WorldObjectKindScript.Kind.FRUIT_BUSH),
+		"expected fruit bush at %s" % bush_tile)
+	assert(GameActionRulesScript.can_start_action(state, GameActionKindScript.Kind.HARVEST, bush_tile, 0),
+		"HARVEST on a fruit bush should be valid")
+	assert(not GameActionRulesScript.can_start_action(state, GameActionKindScript.Kind.HARVEST, empty_surface_tile, 0),
+		"HARVEST on an empty tile should be invalid")
+	assert(not GameActionRulesScript.can_start_action(state, GameActionKindScript.Kind.HARVEST, bush_tile, 1),
+		"HARVEST with invalid actor slot should be invalid")
+
+func _first_fruit_bush_tile(state: GameState) -> Vector2i:
+	for tile_position in state.world_objects.object_tiles():
+		if state.has_world_object_kind(tile_position, WorldObjectKindScript.Kind.FRUIT_BUSH):
+			return tile_position
+	assert(false, "expected at least one fruit bush")
+	return Vector2i.ZERO

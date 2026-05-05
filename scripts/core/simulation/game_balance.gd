@@ -4,6 +4,17 @@ extends RefCounted
 # Calendar pacing.
 const CLOCK_SECONDS_PER_REAL_SECOND: float = 720.0
 const PREPARE_FOR_WINTER_DAYS: int = 10
+const HARVEST_DURATION_GAME_SECONDS: float = 10.0
+const HARVEST_DURATION_REAL_SECONDS: float = HARVEST_DURATION_GAME_SECONDS / CLOCK_SECONDS_PER_REAL_SECOND
+
+# World-object defaults.
+const FRUIT_BUSH_DEFAULT_COUNT: int = 6
+const FRUIT_BUSH_BERRIES_MIN: int = 2
+const FRUIT_BUSH_BERRIES_MAX: int = 5
+const FRUIT_BUSH_WOOD_MIN: int = 1
+const FRUIT_BUSH_WOOD_MAX: int = 3
+const FRUIT_BUSH_BERRY_SEEDS_MIN: int = 1
+const FRUIT_BUSH_BERRY_SEEDS_MAX: int = 2
 
 # Survival decay and recovery.
 const ENERGY_DECAY_PER_SECOND: float = 0.12

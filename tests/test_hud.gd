@@ -13,6 +13,10 @@ func _init() -> void:
 		return
 	if not _test_crew_card_zoom_out_chooses_a_smaller_grid_fit():
 		return
+	if not _test_context_menu_layout_flips_actor_panel_inside_the_viewport():
+		return
+	if not _test_context_menu_stays_open_while_child_is_hovered():
+		return
 	print("test_hud: ok")
 	quit(0)
 
@@ -108,6 +112,46 @@ func _test_crew_card_zoom_out_chooses_a_smaller_grid_fit() -> bool:
 		zoomed_layout["columns"] != base_layout["columns"]
 			or zoomed_layout["rows"] != base_layout["rows"],
 		"expected zoomed-out crew layout to change its row/column arrangement"):
+		return false
+	return true
+
+func _test_context_menu_layout_flips_actor_panel_inside_the_viewport() -> bool:
+	var layout: Dictionary = HudScript.calculate_context_menu_layout(
+		Vector2(640.0, 360.0),
+		Vector2(590.0, 320.0),
+		Vector2(180.0, 120.0),
+		Vector2(200.0, 150.0),
+		12.0,
+		10.0)
+	var action_position: Vector2 = layout["action_position"]
+	var actor_position: Vector2 = layout["actor_position"]
+
+	if not _require(action_position.x >= 0.0 and action_position.y >= 0.0,
+		"expected action panel clamped into viewport, got %s" % [action_position]):
+		return false
+	if not _require(actor_position.x >= 0.0 and actor_position.y >= 0.0,
+		"expected actor panel clamped into viewport, got %s" % [actor_position]):
+		return false
+	if not _require(actor_position.x < action_position.x,
+		"expected actor panel to flip left of the action panel, got %s vs %s" % [actor_position, action_position]):
+		return false
+	return true
+
+func _test_context_menu_stays_open_while_child_is_hovered() -> bool:
+	var parent_rect: Rect2 = Rect2(Vector2(100.0, 100.0), Vector2(180.0, 120.0))
+	var child_rect: Rect2 = Rect2(Vector2(292.0, 100.0), Vector2(200.0, 150.0))
+	var child_hover: Vector2 = Vector2(350.0, 130.0)
+	var gap_hover: Vector2 = Vector2(286.0, 130.0)
+	var outside_hover: Vector2 = Vector2(80.0, 80.0)
+
+	if not _require(HudScript.should_keep_context_menu_open(child_hover, parent_rect, true, child_rect),
+		"expected child hover to keep the menu open"):
+		return false
+	if not _require(HudScript.should_keep_context_menu_open(gap_hover, parent_rect, true, child_rect),
+		"expected the gap between parent and child to keep the menu open"):
+		return false
+	if not _require(not HudScript.should_keep_context_menu_open(outside_hover, parent_rect, true, child_rect),
+		"expected outside hover to close the menu"):
 		return false
 	return true
 

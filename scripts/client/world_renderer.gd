@@ -30,15 +30,20 @@ const _GRID_LINE_COLOR: Color = Color(0.0, 0.0, 0.0, 0.55)
 const _GRID_LINE_WIDTH: float = 1.0
 const _GRID_DASH_LENGTH: float = 6.0
 const _GRID_DASH_GAP: float = 4.0
+const _FRUIT_BUSH_TEXTURE_PATH: String = "res://resources/sprites/environment/fruit_bush.svg"
+
+const WorldObjectKindScript = preload("res://scripts/core/world/world_object_kind.gd")
 
 var state: GameState
 var layout: TileLayout
 var hovered_tile: Variant = null
 var interaction_mode: int = GameInteractionMode.Kind.EXCAVATE
+var _fruit_bush_texture: Texture2D
 
 func setup(p_state: GameState, p_layout: TileLayout) -> void:
 	state = p_state
 	layout = p_layout
+	_fruit_bush_texture = load(_FRUIT_BUSH_TEXTURE_PATH) as Texture2D
 
 func _draw() -> void:
 	if state == null or layout == null:
@@ -47,6 +52,7 @@ func _draw() -> void:
 	for y in range(visible.position.y, visible.position.y + visible.size.y):
 		for x in range(visible.position.x, visible.position.x + visible.size.x):
 			_draw_tile(Vector2i(x, y))
+	_draw_world_objects()
 	_draw_active_action_target()
 	_draw_active_furnace_overlays()
 	_draw_night_tint()
@@ -60,6 +66,35 @@ func _draw_tile(tile: Vector2i) -> void:
 	var rect: Rect2 = layout.tile_to_rect(tile)
 	var kind: int = state.world.get_tile(tile)
 	draw_rect(rect, _tile_color(kind, tile), true)
+
+func _draw_world_objects() -> void:
+	var visible: Rect2i = layout.visible_world_bounds()
+	for y in range(visible.position.y, visible.position.y + visible.size.y):
+		for x in range(visible.position.x, visible.position.x + visible.size.x):
+			var tile: Vector2i = Vector2i(x, y)
+			var object_kind: Variant = state.get_world_object_kind(tile)
+			if object_kind == null:
+				continue
+			_draw_world_object(tile, object_kind)
+
+func _draw_world_object(tile: Vector2i, object_kind: int) -> void:
+	var rect: Rect2 = layout.tile_to_rect(tile)
+	match object_kind:
+		WorldObjectKindScript.Kind.FRUIT_BUSH:
+			var inset: float = rect.size.x * 0.06
+			var draw_rect_target: Rect2 = Rect2(
+				rect.position + Vector2(inset, inset),
+				rect.size - Vector2(inset * 2.0, inset * 1.4))
+			if _fruit_bush_texture != null:
+				draw_texture_rect(_fruit_bush_texture, draw_rect_target, false)
+				return
+			draw_circle(draw_rect_target.get_center(), draw_rect_target.size.x * 0.28, Color8(79, 165, 90))
+			draw_rect(
+				Rect2(
+					Vector2(draw_rect_target.get_center().x - 2.0, draw_rect_target.position.y + draw_rect_target.size.y * 0.55),
+					Vector2(4.0, draw_rect_target.size.y * 0.35)),
+				Color8(111, 72, 41),
+				true)
 
 func _draw_active_furnace_overlays() -> void:
 	var visible: Rect2i = layout.visible_world_bounds()

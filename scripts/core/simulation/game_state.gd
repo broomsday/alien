@@ -17,9 +17,12 @@ extends RefCounted
 const _LCG_MULT: int = 1664525
 const _LCG_INC: int = 1013904223
 const _U32_MASK: int = 0xFFFFFFFF
+const WorldObjectMapScript = preload("res://scripts/core/world/world_object_map.gd")
+const WorldObjectKindScript = preload("res://scripts/core/world/world_object_kind.gd")
 
 var player: PlayerState
 var world: WorldGrid
+var world_objects: WorldObjectMapScript
 var inventory: InventoryState
 var clock: ClockState
 
@@ -43,19 +46,27 @@ var active_combat: Variant = null
 # null or CombatRoundOutcome — cleared on begin_combat to avoid stale HUD.
 var last_combat_round_outcome: Variant = null
 var combat_encounters_won: int = 0
+var last_harvest_rewards: Dictionary = {}
 
 var _random_state: int
 
 # Vector2i -> float seconds remaining on each furnace's current burn.
 var _furnace_burn_seconds_remaining: Dictionary = {}
 
-func _init(p_player: PlayerState, p_world: WorldGrid, p_inventory: InventoryState, p_clock: ClockState, p_random_seed: int = 0x00C0FFEE) -> void:
+func _init(
+		p_player: PlayerState,
+		p_world: WorldGrid,
+		p_inventory: InventoryState,
+		p_clock: ClockState,
+		p_random_seed: int = 0x00C0FFEE,
+		p_world_objects: WorldObjectMapScript = null) -> void:
 	assert(p_player != null, "player required")
 	assert(p_world != null, "world required")
 	assert(p_inventory != null, "inventory required")
 	assert(p_clock != null, "clock required")
 	player = p_player
 	world = p_world
+	world_objects = p_world_objects if p_world_objects != null else WorldObjectMapScript.new()
 	inventory = p_inventory
 	clock = p_clock
 	_random_state = (1 if p_random_seed == 0 else p_random_seed) & _U32_MASK
@@ -64,6 +75,8 @@ func try_start_action(action: GameAction) -> bool:
 	assert(action != null, "action required")
 	if active_action != null:
 		return false
+	if action.kind == GameActionKind.Kind.HARVEST and action.target_tile is Vector2i:
+		move_actor_to(action.actor_slot, action.target_tile)
 	active_action = action
 	if action.kind == GameActionKind.Kind.EXPEDITION:
 		expedition_status = ExpeditionStatus.Kind.AWAY
@@ -83,6 +96,72 @@ func set_environment_status(ambient_temperature: float, p_is_indoors: bool, p_is
 	current_ambient_gas = ambient_gas
 	is_player_indoors = p_is_indoors
 	is_player_underground = p_is_underground
+
+func actor_slot_count() -> int:
+	return 1
+
+func is_valid_actor_slot(actor_slot: int) -> bool:
+	return actor_slot == 0
+
+func is_actor_alive(actor_slot: int) -> bool:
+	return is_valid_actor_slot(actor_slot) and player.is_alive()
+
+func get_actor_display_name(actor_slot: int) -> String:
+	assert(is_valid_actor_slot(actor_slot), "invalid actor_slot")
+	return "Crew %02d" % [actor_slot + 1]
+
+func get_actor_portrait_filename(actor_slot: int) -> String:
+	assert(is_valid_actor_slot(actor_slot), "invalid actor_slot")
+	return player.portrait_filename
+
+func get_actor_physique(actor_slot: int) -> int:
+	assert(is_valid_actor_slot(actor_slot), "invalid actor_slot")
+	return player.physique
+
+func get_actor_aptitude(actor_slot: int) -> int:
+	assert(is_valid_actor_slot(actor_slot), "invalid actor_slot")
+	return player.aptitude
+
+func get_actor_tile_position(actor_slot: int) -> Vector2i:
+	assert(is_valid_actor_slot(actor_slot), "invalid actor_slot")
+	return player.tile_position
+
+func move_actor_to(actor_slot: int, tile_position: Vector2i) -> void:
+	assert(is_valid_actor_slot(actor_slot), "invalid actor_slot")
+	player.move_to(tile_position)
+
+func get_world_object_kind(tile_position: Vector2i) -> Variant:
+	return world_objects.get_object_kind(tile_position)
+
+func has_world_object_kind(tile_position: Vector2i, object_kind: int) -> bool:
+	return world_objects.has_object_kind(tile_position, object_kind)
+
+func count_world_objects(object_kind: int) -> int:
+	return world_objects.count_kind(object_kind)
+
+func harvest_fruit_bush(tile_position: Vector2i) -> Dictionary:
+	last_harvest_rewards = {}
+	if not has_world_object_kind(tile_position, WorldObjectKindScript.Kind.FRUIT_BUSH):
+		return last_harvest_rewards
+	var berries: int = _roll_range_inclusive(
+		GameBalance.FRUIT_BUSH_BERRIES_MIN,
+		GameBalance.FRUIT_BUSH_BERRIES_MAX)
+	var wood: int = _roll_range_inclusive(
+		GameBalance.FRUIT_BUSH_WOOD_MIN,
+		GameBalance.FRUIT_BUSH_WOOD_MAX)
+	var berry_seeds: int = _roll_range_inclusive(
+		GameBalance.FRUIT_BUSH_BERRY_SEEDS_MIN,
+		GameBalance.FRUIT_BUSH_BERRY_SEEDS_MAX)
+	inventory.add(ItemId.Id.BERRIES, berries)
+	inventory.add(ItemId.Id.WOOD, wood)
+	inventory.add(ItemId.Id.BERRY_SEEDS, berry_seeds)
+	world_objects.remove_object_at(tile_position)
+	last_harvest_rewards = {
+		"berries": berries,
+		"wood": wood,
+		"berry_seeds": berry_seeds,
+	}
+	return last_harvest_rewards
 
 func get_furnace_heat_bonus(tile_position: Vector2i) -> float:
 	var highest_bonus: float = 0.0
@@ -191,3 +270,7 @@ func next_random_int(max_exclusive: int) -> int:
 	assert(max_exclusive > 0, "max_exclusive must be positive")
 	_random_state = ((_random_state * _LCG_MULT) + _LCG_INC) & _U32_MASK
 	return _random_state % max_exclusive
+
+func _roll_range_inclusive(min_value: int, max_value: int) -> int:
+	assert(max_value >= min_value, "max_value must be >= min_value")
+	return min_value + next_random_int((max_value - min_value) + 1)

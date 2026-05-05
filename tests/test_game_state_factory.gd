@@ -1,11 +1,15 @@
 extends SceneTree
 
 const GameStateFactoryScript = preload("res://scripts/core/simulation/game_state_factory.gd")
+const GameBalanceScript = preload("res://scripts/core/simulation/game_balance.gd")
 const SeasonScript = preload("res://scripts/core/time/season.gd")
 const ItemIdScript = preload("res://scripts/core/inventory/item_id.gd")
+const WorldObjectKindScript = preload("res://scripts/core/world/world_object_kind.gd")
+const WorldTileTypeScript = preload("res://scripts/core/world/world_tile_type.gd")
 
 func _init() -> void:
 	_test_create_new_creates_expected_starting_state()
+	_test_create_new_places_fruit_bushes_on_surface_grass()
 	_test_create_new_starts_outside_combat()
 	print("test_game_state_factory: ok")
 	quit(0)
@@ -37,3 +41,21 @@ func _test_create_new_starts_outside_combat() -> void:
 	assert(state.active_combat == null, "expected fresh state with no active combat")
 	assert(state.last_combat_round_outcome == null, "expected no prior combat round")
 	assert(state.combat_encounters_won == 0, "expected 0 victories on a fresh state")
+
+func _test_create_new_places_fruit_bushes_on_surface_grass() -> void:
+	var state: GameState = GameStateFactoryScript.create_new()
+	var bush_tiles: Array[Vector2i] = state.world_objects.object_tiles()
+	assert(state.count_world_objects(WorldObjectKindScript.Kind.FRUIT_BUSH) == GameBalanceScript.FRUIT_BUSH_DEFAULT_COUNT,
+		"expected %d fruit bushes, got %d" % [
+			GameBalanceScript.FRUIT_BUSH_DEFAULT_COUNT,
+			state.count_world_objects(WorldObjectKindScript.Kind.FRUIT_BUSH),
+		])
+	assert(bush_tiles.size() == GameBalanceScript.FRUIT_BUSH_DEFAULT_COUNT,
+		"expected %d bush tiles, got %d" % [GameBalanceScript.FRUIT_BUSH_DEFAULT_COUNT, bush_tiles.size()])
+	for tile_position in bush_tiles:
+		assert(tile_position.y == state.world.surface_row - 1,
+			"expected bush on surface grass row, got %s" % tile_position)
+		assert(tile_position != state.player.tile_position,
+			"expected bushes to avoid player tile %s" % tile_position)
+		assert(state.world.get_tile(tile_position) == WorldTileTypeScript.Kind.AIR,
+			"expected bush tile to remain AIR, got %d" % state.world.get_tile(tile_position))

@@ -7,5 +7,6 @@ enum Kind {
 	BUILD_FURNACE,
 	EXPEDITION,
 	CRAFT,
+	HARVEST,
 	ATTACK,
 }

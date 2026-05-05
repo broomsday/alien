@@ -18,6 +18,9 @@ func _ready() -> void:
 
 	_input_reader = InputReader.new()
 	_input_reader.setup(_session, _layout)
+	_input_reader.world_object_context_requested.connect(_on_world_object_context_requested)
+	_input_reader.actor_context_requested.connect(_on_actor_context_requested)
+	_input_reader.context_menu_dismiss_requested.connect(_on_context_menu_dismiss_requested)
 	add_child(_input_reader)
 
 	_hud = Hud.new()
@@ -25,6 +28,7 @@ func _ready() -> void:
 	_hud.play_area_changed.connect(_on_play_area_changed)
 	_hud.start_expedition_requested.connect(_on_start_expedition_requested)
 	_hud.craft_weapon_requested.connect(_on_craft_weapon_requested)
+	_hud.world_object_action_requested.connect(_on_world_object_action_requested)
 	_sync_layout_from_hud()
 	_hud.refresh(_session.state, _input_reader.interaction_mode)
 
@@ -78,6 +82,18 @@ func _on_start_expedition_requested() -> void:
 
 func _on_craft_weapon_requested() -> void:
 	_input_reader.queue_command(CraftRecipeCommand.new(RecipeId.Id.SIMPLE_WEAPON))
+
+func _on_world_object_context_requested(target_tile: Vector2i, screen_position: Vector2, object_kind: int) -> void:
+	_hud.show_world_object_actions(_session.state, screen_position, target_tile, object_kind)
+
+func _on_actor_context_requested(actor_slot: int, screen_position: Vector2) -> void:
+	_hud.show_actor_actions(_session.state, screen_position, actor_slot)
+
+func _on_context_menu_dismiss_requested() -> void:
+	_hud.hide_world_object_actions()
+
+func _on_world_object_action_requested(action_kind: int, target_tile: Vector2i, actor_slot: int) -> void:
+	_input_reader.queue_command(StartActionCommand.new(action_kind, target_tile, actor_slot))
 
 func _sync_layout_from_hud() -> void:
 	_layout.set_play_area(_hud.get_world_viewport_rect())

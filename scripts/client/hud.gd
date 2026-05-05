@@ -4,8 +4,12 @@ extends Control
 signal start_expedition_requested
 signal craft_weapon_requested
 signal play_area_changed(play_area_rect: Rect2)
+signal world_object_action_requested(action_kind: int, target_tile: Vector2i, actor_slot: int)
 
 const EnvironmentDangerLevelScript = preload("res://scripts/core/simulation/environment_danger_level.gd")
+const ActorActionRulesScript = preload("res://scripts/core/simulation/actor_action_rules.gd")
+const GameActionKindScript = preload("res://scripts/core/simulation/game_action_kind.gd")
+const WorldObjectKindScript = preload("res://scripts/core/world/world_object_kind.gd")
 
 const _BASE_VIEWPORT_SIZE: Vector2 = Vector2(1920.0, 1080.0)
 const _LEFT_PANEL_WIDTH_RATIO: float = 0.15
@@ -25,6 +29,9 @@ const _BASE_BUTTON_MIN_WIDTH_PX: float = 116.0
 const _BASE_BUTTON_MIN_HEIGHT_PX: float = 40.0
 const _BASE_POPUP_TITLE_FONT_SIZE: int = 22
 const _BASE_POPUP_CLOSE_BUTTON_SIZE_PX: float = 36.0
+const _BASE_CONTEXT_PANEL_WIDTH_PX: float = 220.0
+const _BASE_CONTEXT_PANEL_GAP_PX: float = 10.0
+const _BASE_CONTEXT_ANCHOR_OFFSET_PX: float = -12.0
 const _CARD_TITLE_FONT_SIZE: int = 16
 const _BODY_FONT_SIZE: int = 15
 const _STAT_TITLE_FONT_SIZE: int = 11
@@ -68,6 +75,12 @@ enum TemperatureUnit {
 	FAHRENHEIT,
 	KELVIN,
 	CELSIUS,
+}
+
+enum ContextSourceKind {
+	NONE,
+	WORLD_OBJECT,
+	ACTOR,
 }
 
 var _backdrop_panels: Array[ColorRect] = []
@@ -118,6 +131,30 @@ var _popup_character_portrait: TextureRect
 var _popup_character_physique_label: Label
 var _popup_character_aptitude_label: Label
 var _popup_character_slot: int = -1
+var _latest_state: GameState
+var _context_menu_root: Control
+var _context_action_panel: PanelContainer
+var _context_action_box: VBoxContainer
+var _context_action_title_label: Label
+var _context_action_list: VBoxContainer
+var _context_actor_panel: PanelContainer
+var _context_actor_box: VBoxContainer
+var _context_actor_title_label: Label
+var _context_actor_list: VBoxContainer
+var _context_action_buttons: Array[Button] = []
+var _context_actor_buttons: Array[Button] = []
+var _context_source_kind: int = ContextSourceKind.NONE
+var _context_actor_slot: int = -1
+var _context_target_tile: Variant = null
+var _context_object_kind: Variant = null
+var _context_hover_action_kind: Variant = null
+var _context_anchor_position: Vector2 = Vector2.ZERO
+var _context_secondary_list_action_kind: Variant = null
+var _context_secondary_list_target_tile: Variant = null
+var _context_secondary_list_actor_slot: int = -1
+var _context_secondary_list_source_kind: int = ContextSourceKind.NONE
+var _context_opened_at_msec: int = 0
+var _context_has_been_hovered: bool = false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
@@ -130,6 +167,7 @@ func _ready() -> void:
 	resized.connect(_on_resized)
 
 func refresh(state: GameState, interaction_mode: int) -> void:
+	_latest_state = state
 	var outdoor_temperature: float = SurvivalRules.get_outdoor_temperature(state)
 	var phase: int = DayNightCycle.get_phase(state.clock)
 	# Phase 7 only exposes the player card; future crew members can raise this count.
@@ -188,6 +226,7 @@ func refresh(state: GameState, interaction_mode: int) -> void:
 	_crafting_button.disabled = not _can_craft_weapon(state)
 	_inventory_button.disabled = false
 	_assignments_button.disabled = false
+	_refresh_context_menu(state)
 
 func get_world_viewport_rect() -> Rect2:
 	if _play_area_panel == null:
@@ -322,6 +361,7 @@ func _build_shell() -> void:
 	add_child(_play_area_panel)
 
 	_build_popup()
+	_build_context_menu()
 
 func _build_popup() -> void:
 	_popup_root = Control.new()
@@ -391,13 +431,61 @@ func _build_popup() -> void:
 	_popup_character_aptitude_label.add_theme_font_size_override("font_size", _LABEL_FONT_SIZE)
 	_popup_character_view.add_child(_popup_character_aptitude_label)
 
+func _build_context_menu() -> void:
+	_context_menu_root = Control.new()
+	_context_menu_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_context_menu_root.visible = false
+	add_child(_context_menu_root)
+
+	_context_action_panel = PanelContainer.new()
+	_context_action_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_context_action_panel.add_theme_stylebox_override("panel",
+		_make_panel_style(_SHELL_BG_COLOR, _PANEL_BORDER_COLOR, 8, 10.0, 2))
+	_context_menu_root.add_child(_context_action_panel)
+
+	_context_action_box = VBoxContainer.new()
+	_context_action_box.add_theme_constant_override("separation", _BASE_POPUP_SEPARATION_PX)
+	_context_action_panel.add_child(_context_action_box)
+
+	_context_action_title_label = Label.new()
+	_context_action_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_context_action_title_label.add_theme_font_size_override("font_size", _CARD_TITLE_FONT_SIZE)
+	_context_action_box.add_child(_context_action_title_label)
+
+	_context_action_list = VBoxContainer.new()
+	_context_action_list.add_theme_constant_override("separation", _BASE_CARD_BOX_SEPARATION_PX)
+	_context_action_box.add_child(_context_action_list)
+
+	_context_actor_panel = PanelContainer.new()
+	_context_actor_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_context_actor_panel.visible = false
+	_context_actor_panel.add_theme_stylebox_override("panel",
+		_make_panel_style(_SHELL_BG_COLOR, _PANEL_BORDER_COLOR, 8, 10.0, 2))
+	_context_menu_root.add_child(_context_actor_panel)
+
+	_context_actor_box = VBoxContainer.new()
+	_context_actor_box.add_theme_constant_override("separation", _BASE_POPUP_SEPARATION_PX)
+	_context_actor_panel.add_child(_context_actor_box)
+
+	_context_actor_title_label = Label.new()
+	_context_actor_title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_context_actor_title_label.text = "Capable Crew"
+	_context_actor_title_label.add_theme_font_size_override("font_size", _CARD_TITLE_FONT_SIZE)
+	_context_actor_box.add_child(_context_actor_title_label)
+
+	_context_actor_list = VBoxContainer.new()
+	_context_actor_list.add_theme_constant_override("separation", _BASE_CARD_BOX_SEPARATION_PX)
+	_context_actor_box.add_child(_context_actor_list)
+
 func _open_popup(title: String) -> void:
+	hide_world_object_actions()
 	_popup_character_slot = -1
 	_popup_character_view.visible = false
 	_popup_title_label.text = title
 	_popup_root.visible = true
 
 func _open_character_popup(slot_index: int) -> void:
+	hide_world_object_actions()
 	_popup_character_slot = slot_index
 	_popup_character_view.visible = true
 	_popup_title_label.text = _crew_name_labels[slot_index].text
@@ -407,6 +495,62 @@ func _close_popup() -> void:
 	_popup_character_slot = -1
 	_popup_character_view.visible = false
 	_popup_root.visible = false
+
+func show_world_object_actions(state: GameState, anchor_position: Vector2, target_tile: Vector2i, object_kind: int) -> void:
+	_latest_state = state
+	_close_popup()
+	_context_source_kind = ContextSourceKind.WORLD_OBJECT
+	_context_actor_slot = -1
+	_context_target_tile = target_tile
+	_context_object_kind = object_kind
+	_context_hover_action_kind = null
+	_context_anchor_position = anchor_position
+	_context_secondary_list_action_kind = null
+	_context_secondary_list_target_tile = null
+	_context_secondary_list_actor_slot = -1
+	_context_secondary_list_source_kind = ContextSourceKind.NONE
+	_context_opened_at_msec = Time.get_ticks_msec()
+	_context_has_been_hovered = false
+	_context_actor_panel.visible = false
+	_rebuild_context_action_buttons()
+	_context_menu_root.visible = true
+	_refresh_context_menu(state)
+
+func show_actor_actions(state: GameState, anchor_position: Vector2, actor_slot: int) -> void:
+	_latest_state = state
+	_close_popup()
+	_context_source_kind = ContextSourceKind.ACTOR
+	_context_actor_slot = actor_slot
+	_context_target_tile = null
+	_context_object_kind = null
+	_context_hover_action_kind = null
+	_context_anchor_position = anchor_position
+	_context_secondary_list_action_kind = null
+	_context_secondary_list_target_tile = null
+	_context_secondary_list_actor_slot = -1
+	_context_secondary_list_source_kind = ContextSourceKind.NONE
+	_context_opened_at_msec = Time.get_ticks_msec()
+	_context_has_been_hovered = false
+	_context_actor_panel.visible = false
+	_rebuild_context_action_buttons()
+	_context_menu_root.visible = true
+	_refresh_context_menu(state)
+
+func hide_world_object_actions() -> void:
+	_context_source_kind = ContextSourceKind.NONE
+	_context_actor_slot = -1
+	_context_target_tile = null
+	_context_object_kind = null
+	_context_hover_action_kind = null
+	_context_secondary_list_action_kind = null
+	_context_secondary_list_target_tile = null
+	_context_secondary_list_actor_slot = -1
+	_context_secondary_list_source_kind = ContextSourceKind.NONE
+	_context_has_been_hovered = false
+	if _context_actor_panel != null:
+		_context_actor_panel.visible = false
+	if _context_menu_root != null:
+		_context_menu_root.visible = false
 
 func _refresh_character_popup(state: GameState) -> void:
 	var portrait_filename: String = _DEFAULT_PORTRAIT_FILENAME
@@ -419,6 +563,146 @@ func _refresh_character_popup(state: GameState) -> void:
 	_popup_character_portrait.texture = _get_portrait_texture(portrait_filename)
 	_popup_character_physique_label.text = "Physique: %d" % physique
 	_popup_character_aptitude_label.text = "Aptitude: %d" % aptitude
+
+func _refresh_context_menu(state: GameState) -> void:
+	if _context_menu_root == null or not _context_menu_root.visible:
+		return
+	if not _context_source_is_valid(state):
+		hide_world_object_actions()
+		return
+	_context_action_title_label.text = _context_action_title(state)
+	if _context_hover_action_kind != null and _context_secondary_list_needs_rebuild(_context_hover_action_kind):
+		_show_context_secondary_panel(state, _context_hover_action_kind)
+	_layout_context_menu()
+	if _context_panels_ready():
+		var keep_open: bool = should_keep_context_menu_open(
+			get_viewport().get_mouse_position(),
+			_context_action_panel.get_global_rect(),
+			_context_actor_panel.visible,
+			_context_actor_panel.get_global_rect())
+		if keep_open:
+			_context_has_been_hovered = true
+		elif _context_has_been_hovered and not _is_within_context_open_grace_period():
+			hide_world_object_actions()
+
+func _rebuild_context_action_buttons() -> void:
+	_clear_context_list(_context_action_list)
+	_context_action_buttons.clear()
+	match _context_source_kind:
+		ContextSourceKind.WORLD_OBJECT:
+			if _context_object_kind == WorldObjectKindScript.Kind.FRUIT_BUSH:
+				var harvest_button: Button = _make_context_button("Harvest")
+				harvest_button.mouse_entered.connect(_on_context_action_hovered.bind(GameActionKindScript.Kind.HARVEST))
+				harvest_button.pressed.connect(_on_context_action_hovered.bind(GameActionKindScript.Kind.HARVEST))
+				_context_action_list.add_child(harvest_button)
+				_context_action_buttons.append(harvest_button)
+			else:
+				_context_action_list.add_child(_make_context_label("No actions"))
+		ContextSourceKind.ACTOR:
+			var actor_harvest_button: Button = _make_context_button("Harvest")
+			actor_harvest_button.mouse_entered.connect(_on_context_action_hovered.bind(GameActionKindScript.Kind.HARVEST))
+			actor_harvest_button.pressed.connect(_on_context_action_hovered.bind(GameActionKindScript.Kind.HARVEST))
+			_context_action_list.add_child(actor_harvest_button)
+			_context_action_buttons.append(actor_harvest_button)
+		_:
+			_context_action_list.add_child(_make_context_label("No actions"))
+
+func _show_context_secondary_panel(state: GameState, action_kind: int) -> void:
+	_context_hover_action_kind = action_kind
+	if _context_secondary_list_needs_rebuild(action_kind):
+		_rebuild_context_secondary_buttons(state, action_kind)
+	_context_actor_panel.visible = true
+
+func _rebuild_context_secondary_buttons(state: GameState, action_kind: int) -> void:
+	_clear_context_list(_context_actor_list)
+	_context_actor_buttons.clear()
+	_context_secondary_list_action_kind = action_kind
+	_context_secondary_list_target_tile = _context_target_tile
+	_context_secondary_list_actor_slot = _context_actor_slot
+	_context_secondary_list_source_kind = _context_source_kind
+	_context_actor_title_label.text = _context_secondary_title()
+	match _context_source_kind:
+		ContextSourceKind.WORLD_OBJECT:
+			var actor_slots: Array[int] = ActorActionRulesScript.get_capable_actor_slots(
+				state,
+				action_kind,
+				_context_target_tile)
+			if actor_slots.is_empty():
+				_context_actor_list.add_child(_make_context_label("No capable crew"))
+				return
+			for actor_slot in actor_slots:
+				var actor_button: Button = _make_context_button("%s  P%d  A%d" % [
+					state.get_actor_display_name(actor_slot),
+					state.get_actor_physique(actor_slot),
+					state.get_actor_aptitude(actor_slot),
+				])
+				actor_button.pressed.connect(_on_context_actor_pressed.bind(actor_slot))
+				_context_actor_list.add_child(actor_button)
+				_context_actor_buttons.append(actor_button)
+		ContextSourceKind.ACTOR:
+			var object_kinds: Array[int] = ActorActionRulesScript.get_harvestable_object_kinds(state, _context_actor_slot)
+			if object_kinds.is_empty():
+				_context_actor_list.add_child(_make_context_label("No harvest targets"))
+				return
+			for object_kind in object_kinds:
+				var object_button: Button = _make_context_button(WorldObjectKindScript.display_name(object_kind))
+				object_button.pressed.connect(_on_context_object_kind_pressed.bind(object_kind))
+				_context_actor_list.add_child(object_button)
+				_context_actor_buttons.append(object_button)
+		_:
+			_context_actor_list.add_child(_make_context_label("No options"))
+
+func _clear_context_list(container: VBoxContainer) -> void:
+	for child in container.get_children():
+		container.remove_child(child)
+		child.queue_free()
+
+func _make_context_button(text: String) -> Button:
+	var button: Button = Button.new()
+	button.text = text
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_context_button(button)
+	return button
+
+func _make_context_label(text: String) -> Label:
+	var label: Label = Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", _scaled_font(_LABEL_FONT_SIZE, calculate_ui_scale(size), 8))
+	return label
+
+func _style_context_button(button: Button) -> void:
+	var ui_scale: float = calculate_ui_scale(size)
+	button.custom_minimum_size = Vector2(
+		_scaled_px(_BASE_CONTEXT_PANEL_WIDTH_PX - 28.0, ui_scale, 140.0),
+		_scaled_px(_BASE_BUTTON_MIN_HEIGHT_PX, ui_scale, 24.0))
+	button.add_theme_font_size_override("font_size", _scaled_font(_BUTTON_FONT_SIZE, ui_scale, 8))
+
+func _on_context_action_hovered(action_kind: int) -> void:
+	if _latest_state == null:
+		return
+	_show_context_secondary_panel(_latest_state, action_kind)
+	_layout_context_menu()
+
+func _on_context_actor_pressed(actor_slot: int) -> void:
+	if _context_hover_action_kind == null or not (_context_target_tile is Vector2i):
+		return
+	world_object_action_requested.emit(_context_hover_action_kind, _context_target_tile, actor_slot)
+	hide_world_object_actions()
+
+func _on_context_object_kind_pressed(object_kind: int) -> void:
+	if _latest_state == null or _context_hover_action_kind == null or _context_actor_slot < 0:
+		return
+	var target_tile: Variant = ActorActionRulesScript.find_nearest_harvestable_target_tile(
+		_latest_state,
+		_context_actor_slot,
+		object_kind)
+	if not (target_tile is Vector2i):
+		return
+	world_object_action_requested.emit(_context_hover_action_kind, target_tile, _context_actor_slot)
+	hide_world_object_actions()
 
 func _get_portrait_texture(filename: String) -> Texture2D:
 	var key: String = filename if not filename.is_empty() else _DEFAULT_PORTRAIT_FILENAME
@@ -465,8 +749,36 @@ func _update_layout() -> void:
 		_popup_root.size = size
 		_popup_panel.position = ((size - popup_size) * 0.5).floor()
 		_popup_panel.size = popup_size
+	if _context_menu_root != null:
+		_context_menu_root.position = Vector2.ZERO
+		_context_menu_root.size = size
+		if _context_menu_root.visible:
+			_layout_context_menu()
 
 	play_area_changed.emit(get_world_viewport_rect())
+
+func _layout_context_menu() -> void:
+	if _context_menu_root == null or not _context_menu_root.visible:
+		return
+	var ui_scale: float = calculate_ui_scale(size)
+	var panel_gap: float = _scaled_px(_BASE_CONTEXT_PANEL_GAP_PX, ui_scale, 4.0)
+	var anchor_offset: float = _scaled_signed_px(_BASE_CONTEXT_ANCHOR_OFFSET_PX, ui_scale)
+	var panel_width: float = _scaled_px(_BASE_CONTEXT_PANEL_WIDTH_PX, ui_scale, 160.0)
+	_context_action_panel.custom_minimum_size = Vector2(panel_width, 0.0)
+	_context_actor_panel.custom_minimum_size = Vector2(panel_width, 0.0)
+	var action_panel_size: Vector2 = _context_action_panel.get_combined_minimum_size()
+	var actor_panel_size: Vector2 = _context_actor_panel.get_combined_minimum_size()
+	var menu_layout: Dictionary = calculate_context_menu_layout(
+		size,
+		_context_anchor_position,
+		action_panel_size,
+		actor_panel_size,
+		panel_gap,
+		anchor_offset)
+	_context_action_panel.position = menu_layout["action_position"]
+	_context_action_panel.size = action_panel_size
+	_context_actor_panel.position = menu_layout["actor_position"]
+	_context_actor_panel.size = actor_panel_size
 
 func _layout_backdrop(play_area_rect: Rect2) -> void:
 	if _backdrop_panels.size() != 4:
@@ -517,6 +829,28 @@ static func calculate_shell_layout(viewport_size: Vector2) -> Dictionary:
 		"ui_scale": ui_scale,
 	}
 
+static func calculate_context_menu_layout(
+		viewport_size: Vector2,
+		anchor_position: Vector2,
+		action_panel_size: Vector2,
+		actor_panel_size: Vector2,
+		panel_gap: float,
+		anchor_offset: float = 0.0) -> Dictionary:
+	var action_position: Vector2 = anchor_position + Vector2(anchor_offset, anchor_offset)
+	action_position.x = clampf(action_position.x, 0.0, maxf(0.0, viewport_size.x - action_panel_size.x))
+	action_position.y = clampf(action_position.y, 0.0, maxf(0.0, viewport_size.y - action_panel_size.y))
+	var actor_position: Vector2 = Vector2(
+		action_position.x + action_panel_size.x + panel_gap,
+		action_position.y)
+	if actor_position.x + actor_panel_size.x > viewport_size.x:
+		actor_position.x = action_position.x - actor_panel_size.x - panel_gap
+	actor_position.x = clampf(actor_position.x, 0.0, maxf(0.0, viewport_size.x - actor_panel_size.x))
+	actor_position.y = clampf(actor_position.y, 0.0, maxf(0.0, viewport_size.y - actor_panel_size.y))
+	return {
+		"action_position": action_position.floor(),
+		"actor_position": actor_position.floor(),
+	}
+
 func _apply_responsive_theme(ui_scale: float) -> void:
 	var panel_content_margin: float = _scaled_px(_BASE_PANEL_CONTENT_MARGIN_PX, ui_scale, 4.0)
 	var top_row_separation: int = _scaled_font(_BASE_TOP_ROW_SEPARATION_PX, ui_scale, 2)
@@ -548,11 +882,25 @@ func _apply_responsive_theme(ui_scale: float) -> void:
 		_make_panel_style(_PLAY_AREA_BG_COLOR, _PANEL_BORDER_COLOR, 0, 0.0, 0))
 	_popup_panel.add_theme_stylebox_override("panel",
 		_make_panel_style(_SHELL_BG_COLOR, _PANEL_BORDER_COLOR, card_panel_radius, 0.0, popup_border_width))
+	if _context_action_panel != null:
+		_context_action_panel.add_theme_stylebox_override("panel",
+			_make_panel_style(_SHELL_BG_COLOR, _PANEL_BORDER_COLOR, card_panel_radius, panel_content_margin, popup_border_width))
+	if _context_actor_panel != null:
+		_context_actor_panel.add_theme_stylebox_override("panel",
+			_make_panel_style(_SHELL_BG_COLOR, _PANEL_BORDER_COLOR, card_panel_radius, panel_content_margin, popup_border_width))
 
 	if _top_row != null:
 		_top_row.add_theme_constant_override("separation", top_row_separation)
 	if _popup_box != null:
 		_popup_box.add_theme_constant_override("separation", popup_separation)
+	if _context_action_box != null:
+		_context_action_box.add_theme_constant_override("separation", popup_separation)
+	if _context_action_list != null:
+		_context_action_list.add_theme_constant_override("separation", card_spacing)
+	if _context_actor_box != null:
+		_context_actor_box.add_theme_constant_override("separation", popup_separation)
+	if _context_actor_list != null:
+		_context_actor_list.add_theme_constant_override("separation", card_spacing)
 
 	for chip in _stat_chips:
 		chip.custom_minimum_size = Vector2(chip_min_width, 0.0)
@@ -612,6 +960,80 @@ func _apply_responsive_theme(ui_scale: float) -> void:
 			popup_close_button_size,
 			popup_close_button_size)
 		_popup_close_button.add_theme_font_size_override("font_size", button_font_size)
+	if _context_action_title_label != null:
+		_context_action_title_label.add_theme_font_size_override("font_size", card_title_font_size)
+	if _context_actor_title_label != null:
+		_context_actor_title_label.add_theme_font_size_override("font_size", card_title_font_size)
+	for button in _context_action_buttons:
+		_style_context_button(button)
+	for button in _context_actor_buttons:
+		_style_context_button(button)
+
+func _context_secondary_list_needs_rebuild(action_kind: int) -> bool:
+	return _context_secondary_list_action_kind != action_kind \
+		or _context_secondary_list_target_tile != _context_target_tile \
+		or _context_secondary_list_actor_slot != _context_actor_slot \
+		or _context_secondary_list_source_kind != _context_source_kind \
+		or _context_actor_list.get_child_count() == 0
+
+func _context_source_is_valid(state: GameState) -> bool:
+	match _context_source_kind:
+		ContextSourceKind.WORLD_OBJECT:
+			return (_context_target_tile is Vector2i) \
+				and _context_object_kind != null \
+				and state.get_world_object_kind(_context_target_tile) == _context_object_kind
+		ContextSourceKind.ACTOR:
+			return state.is_valid_actor_slot(_context_actor_slot) and state.is_actor_alive(_context_actor_slot)
+		_:
+			return false
+
+func _context_action_title(state: GameState) -> String:
+	match _context_source_kind:
+		ContextSourceKind.WORLD_OBJECT:
+			return WorldObjectKindScript.display_name(_context_object_kind)
+		ContextSourceKind.ACTOR:
+			return state.get_actor_display_name(_context_actor_slot)
+		_:
+			return "Actions"
+
+func _context_secondary_title() -> String:
+	match _context_source_kind:
+		ContextSourceKind.WORLD_OBJECT:
+			return "Capable Crew"
+		ContextSourceKind.ACTOR:
+			return "Harvest Nearby"
+		_:
+			return "Options"
+
+func _context_panels_ready() -> bool:
+	return _context_action_panel != null and _context_action_panel.size.x > 0.0 and _context_action_panel.size.y > 0.0
+
+func _is_within_context_open_grace_period() -> bool:
+	return Time.get_ticks_msec() - _context_opened_at_msec <= 250
+
+static func should_keep_context_menu_open(
+		mouse_position: Vector2,
+		action_panel_rect: Rect2,
+		secondary_panel_visible: bool,
+		secondary_panel_rect: Rect2) -> bool:
+	if action_panel_rect.has_point(mouse_position):
+		return true
+	if not secondary_panel_visible:
+		return false
+	return merged_context_menu_hover_rect(action_panel_rect, secondary_panel_rect).has_point(mouse_position)
+
+static func merged_context_menu_hover_rect(action_panel_rect: Rect2, secondary_panel_rect: Rect2) -> Rect2:
+	var top_left: Vector2 = Vector2(
+		minf(action_panel_rect.position.x, secondary_panel_rect.position.x),
+		minf(action_panel_rect.position.y, secondary_panel_rect.position.y))
+	var bottom_right: Vector2 = Vector2(
+		maxf(
+			action_panel_rect.position.x + action_panel_rect.size.x,
+			secondary_panel_rect.position.x + secondary_panel_rect.size.x),
+		maxf(
+			action_panel_rect.position.y + action_panel_rect.size.y,
+			secondary_panel_rect.position.y + secondary_panel_rect.size.y))
+	return Rect2(top_left, bottom_right - top_left)
 
 func _apply_metric_label_style(label: Label, font_size: int, outline_size: int) -> void:
 	label.add_theme_font_size_override("font_size", font_size)
@@ -619,6 +1041,9 @@ func _apply_metric_label_style(label: Label, font_size: int, outline_size: int) 
 
 static func _scaled_px(base_px: float, ui_scale: float, min_px: float = 1.0) -> float:
 	return maxf(min_px, round(base_px * ui_scale))
+
+static func _scaled_signed_px(base_px: float, ui_scale: float) -> float:
+	return round(base_px * ui_scale)
 
 static func _scaled_font(base_size: int, ui_scale: float, min_size: int = 1) -> int:
 	return maxi(min_size, int(round(float(base_size) * ui_scale)))
@@ -1114,11 +1539,10 @@ func _on_crew_card_input(event: InputEvent, slot_index: int) -> void:
 	var button_event: InputEventMouseButton = event
 	if not button_event.pressed:
 		return
-	var crew_name: String = _crew_name_labels[slot_index].text
 	if button_event.button_index == MOUSE_BUTTON_LEFT:
 		_open_character_popup(slot_index)
 	elif button_event.button_index == MOUSE_BUTTON_RIGHT:
-		_open_popup("%s — Activities" % crew_name)
+		show_actor_actions(_latest_state, get_viewport().get_mouse_position(), slot_index)
 
 func _on_dim_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton):
